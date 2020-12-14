@@ -1,75 +1,17 @@
-/* --COPYRIGHT--,BSD_EX
- * Copyright (c) 2013, Texas Instruments Incorporated
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
- *
- * *  Redistributions of source code must retain the above copyright
- *    notice, this list of conditions and the following disclaimer.
- *
- * *  Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in the
- *    documentation and/or other materials provided with the distribution.
- *
- * *  Neither the name of Texas Instruments Incorporated nor the names of
- *    its contributors may be used to endorse or promote products derived
- *    from this software without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
- * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO,
- * THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
- * PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
- * EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
- * PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
- * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
- * WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR
- * OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE,
- * EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
- *******************************************************************************
- *
- *                       MSP432 CODE EXAMPLE DISCLAIMER
- *
- * MSP432 code examples are self-contained low-level programs that typically
- * demonstrate a single peripheral function or device feature in a highly
- * concise manner. For this the code may rely on the device's power-on default
- * register values and settings such as the clock configuration and care must
- * be taken when combining code from several examples to avoid potential side
- * effects. Also see http://www.ti.com/tool/mspdriverlib for an API functional
- * library & https://dev.ti.com/pinmux/ for a GUI approach to peripheral configuration.
- *
- * --/COPYRIGHT--*/
-//******************************************************************************
-//  MSP432P401 Demo - Timer_A3, Toggle P8.0/TA1.0, Up Mode, 32kHz ACLK
-//
-//  Description: Toggle P8.0 using hardware TA1.0 output. Timer1_A is configured
-//  for up mode with CCR0 defining period, TA1.0 also output on P8.0. In this
-//  example, CCR0 is loaded with 10-1 and TA1.0 will toggle P8.0 at TACLK/10.
-//  Thus the output frequency on P8.0 will be the TACLK/20. No CPU or software
-//  resources required. Normal operating mode is LPM3.
-//  As coded with TACLK = ACLK, P8.0 output frequency = 32768/20 = 1.6384kHz.
-//  ACLK = TACLK = 32kHz, MCLK = default DCO ~3MHz
-//
-//                MSP432P401
-//            -------------------
-//        /|\|          XIN(PJ.0)|--
-//         | |                   |  ~32768Hz
-//         --|RST      XOUT(PJ.1)|--
-//           |                   |
-//           |         P8.0/TA1.0|--> ACLK/20
-//
-//
-//   William Goh
-//   Texas Instruments Inc.
-//   June 2016 (updated) | June 2014 (created)
-//   Built with CCSv6.1, IAR, Keil, GCC
-//******************************************************************************
 #include "ti/devices/msp432p4xx/inc/msp.h"
+#include <stdbool.h>
 
-const uint16_t DUTY_MAX=255;
+/*
+ * Peripherals Overview
+ * TA1.1    ->  duty                ->  P7.7
+ * TA1.2    ->  adc trigger         ->  P7.6
+ * TA0.0    ->  main cl interrupt
+ */
+
+const uint16_t DUTY_MAX=255;    //maximum value of duty
+uint8_t duty=0;                 //duty cycle
+bool run_main_loop=false;       //flag which triggers execution of one control loop cycle
+volatile uint16_t result;       //result of adc conversion
 
 void error(void)
 {
@@ -174,31 +116,45 @@ void init_clk(void){
             CS_CTL1_SELM_3;
     CS->KEY = 0;                            // Lock CS module from unintended accesses
 
+
+
     /* Step 4: Output MCLK to port pin to demonstrate 48MHz operation */
     P4->DIR |= BIT3;
     P4->SEL0 |=BIT3;                        // Output MCLK
     P4->SEL1 &= ~(BIT3);
 }
 
-volatile uint16_t result;
-
-int main(void)
-{
-    WDT_A->CTL = WDT_A_CTL_PW |             // Stop WDT
-            WDT_A_CTL_HOLD;
-
-    //P8.0 -> TA1.0
-    P8->DIR |= BIT0;                        // P8.0 output
-    P8->SEL1 |= BIT0;                       // P8.0 option select
-    P8->SEL0 &= (~BIT0);                    // P8.0 option select
-    //P7.7 -> TA1.1
+void init_gpio(void){
+    //P7.7  ->  TA1.1 (duty)
     P7->DIR |= BIT7;                        // P7.7 output
     P7->SEL0 |= BIT7;                       // P7.7 option select
     P7->SEL1 &= (~BIT7);                    // P7.7 option select
+    //P7.6  ->  TA1.2 (adc trigger)
+    P7->DIR |= BIT6;                        // P7.6 output
+    P7->SEL0 |= BIT6;                       // P7.6 option select
+    P7->SEL1 &= (~BIT6);                    // P7.6 option select
+}
 
-    init_clk();
-    init_adc();
+//init the timer responsible for triggering the main control loop
+void init_cl_timer(void){
+    //TimerA0 uses SMCLK and operates in UPMODE (counts to CCR[0] and then restars from zero)
+    //the interrupt enable bit of this counter is set (TIMER_A_CCTLN_CCIE)
+    TIMER_A0->CTL |= TIMER_A_CTL_TASSEL_2 | TIMER_A_CTL_MC__UP | TIMER_A_CCTLN_CCIE;
 
+    //enable TA0 interrupt in the ARM Nested Vector Interrupt Controller (NVIC)
+    NVIC->ISER[0] = 1 << ((TA0_0_IRQn) & 31);
+
+    //configure Capture-Compare Register CCR
+    TIMER_A0->CCTL[0] &= ~TIMER_A_CCTLN_CCIFG;      //reset the capture-compare interrupt flag
+    TIMER_A0->CCTL[0] = TIMER_A_CCTLN_CCIE;         //enable the interrupt request of this cc register
+    TIMER_A0->CCR[0] = 1024-1;
+
+    // Enable global interrupt
+    __enable_irq();
+}
+
+//init the pwm and the adc for synchronized sampling
+void init_pwm_adc(void){
     // Configure Timer_A
     TIMER_A1->CTL = TIMER_A_CTL_TASSEL_2 |  // SMCLK
             TIMER_A_CTL_MC_1 |              // Up Mode
@@ -207,9 +163,9 @@ int main(void)
     TIMER_A1->EX0 = TIMER_A_EX0_TAIDEX_0;   // Clk /1
     //configure CCR TA1.0 (ceiling register)
     TIMER_A1->CCTL[0] = TIMER_A_CCTLN_OUTMOD_4; // CCR4 toggle mode
-    TIMER_A1->CCR[0] = 256 - 1;
+    TIMER_A1->CCR[0] = DUTY_MAX;
     //configure CCR TA1.1 (duty register)
-    TIMER_A1->CCR[1] = 100;                     //this value corresponds to the PWM value in [0...255]
+    TIMER_A1->CCR[1] = duty;                     //this value corresponds to the PWM value in [0...255]
     TIMER_A1->CCTL[1] = TIMER_A_CCTLN_OUTMOD_3; // CCR4 toggle mode for PWM generation
     /*  configure CCR TA1.2 (adc trigger register)
         TA1.2 will serve as the adc trigger. TA1.2 will have a positive edge (and trigger the adc) when
@@ -222,18 +178,42 @@ int main(void)
         TIMER_A1->CCR[2] = (DUTY_MAX/2)+(TIMER_A1->CCR[1])/2;
     TIMER_A1->CCTL[2] = TIMER_A_CCTLN_OUTMOD_3; // CCR4 toggle mode for ADC triggering
 
+}
 
+
+void TA0_0_IRQHandler(void){
+    // Clear the compare interrupt flag
+    TIMER_A0->CCTL[0] &= ~TIMER_A_CCTLN_CCIFG;
+    //set the flag to run the main loop
+    run_main_loop=true;
+}
+
+
+int main(void)
+{
+    WDT_A->CTL = WDT_A_CTL_PW |             // Stop WDT
+            WDT_A_CTL_HOLD;
+
+    init_gpio();
+    init_clk();
+    init_adc();
+    init_pwm_adc();
+    init_cl_timer();
+
+    //main control loop
     uint32_t counter=0;
     while(1){
+        /*
         if((ADC14->IFGR0)&(ADC14_IFGR0_IFG0)){
             counter++;
             //adc result has been written to memory
             result=ADC14->MEM[0];
+        }*/
+        if(run_main_loop){
+            //calculate the measured current
         }
     }
 
     __sleep();
     __no_operation();                       // For debugger
 }
-
-
