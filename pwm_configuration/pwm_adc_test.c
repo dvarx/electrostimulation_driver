@@ -6,12 +6,15 @@
  * TA1.1    ->  duty                ->  P7.7
  * TA1.2    ->  adc trigger         ->  P7.6
  * TA0.0    ->  main cl interrupt
+ * ADC Input                        ->  P4.0
  */
 
 const uint16_t DUTY_MAX=255;    //maximum value of duty
 uint8_t duty=0;                 //duty cycle
 bool run_main_loop=false;       //flag which triggers execution of one control loop cycle
 volatile uint16_t result;       //result of adc conversion
+uint32_t adc_sum = 0;
+uint16_t no_samples = 0;
 
 void error(void)
 {
@@ -62,14 +65,24 @@ void init_adc(void){
     for(i=0; i<32; i++){
         ADC14->MCTL[i] |= ADC14_MCTLN_INCH_13;
     }
-    //output the adc trigger on another pin for debugging
 
-
+    /* enable the adc interrupt upon sampling completion
+     *
+     */
+    NVIC->ISER[0] = 1 << ((ADC14_IRQn) & 31);   // Enable ADC interrupt in NVIC module
+    ADC14->IER0 |= ADC14_IER0_IE0;              // Enable adc conv complete interrupt for adc memory location 1
 
     /* enable the ADC, enable conversion
      * Hint: it may be useful to disable the ADC conversion when processing the results (e.g. unset ADC14_CTL0_ENC)
      */
     ADC14->CTL0 |= ADC14_CTL0_ON | ADC14_CTL0_ENC;
+}
+
+// ADC14 interrupt service routine
+void ADC14_IRQHandler(void) {
+    //add the measured current to the running sum. read access to MEM[0] will also clear the associated interrupt flag
+    adc_sum += ADC14->MEM[0];
+    no_samples++;
 }
 
 void init_clk(void){
@@ -147,7 +160,7 @@ void init_cl_timer(void){
     //configure Capture-Compare Register CCR
     TIMER_A0->CCTL[0] &= ~TIMER_A_CCTLN_CCIFG;      //reset the capture-compare interrupt flag
     TIMER_A0->CCTL[0] = TIMER_A_CCTLN_CCIE;         //enable the interrupt request of this cc register
-    TIMER_A0->CCR[0] = 1024-1;
+    TIMER_A0->CCR[0] = 0x0FFF;
 
     // Enable global interrupt
     __enable_irq();
@@ -201,7 +214,7 @@ int main(void)
     init_cl_timer();
 
     //main control loop
-    uint32_t counter=0;
+    uint32_t counter_cl=0;
     while(1){
         /*
         if((ADC14->IFGR0)&(ADC14_IFGR0_IFG0)){
@@ -210,10 +223,13 @@ int main(void)
             result=ADC14->MEM[0];
         }*/
         if(run_main_loop){
-            //calculate the measured current
+            counter_cl++;
+            //calculate the average current signal measured
+            uint32_t adc_avg = adc_sum/no_samples;
+            adc_sum=0;
+            no_samples=0;
+
+            run_main_loop=false;
         }
     }
-
-    __sleep();
-    __no_operation();                       // For debugger
 }
