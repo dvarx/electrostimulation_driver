@@ -240,8 +240,7 @@ void TA0_0_IRQHandler(void){
     // Clear the compare interrupt flag
     TIMER_A0->CCTL[0] &= ~TIMER_A_CCTLN_CCIFG;
     //set the flag to run the main loop
-    if(no_samples>8)
-        run_main_loop=true;
+    run_main_loop=true;
 }
 
 int main(void)
