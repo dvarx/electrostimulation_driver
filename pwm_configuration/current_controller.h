@@ -18,5 +18,8 @@ struct pi_controller_32{
     float delta_T;
 };
 
+#define MIN(a,b) (((a)<(b))?(a):(b))
+#define MAX(a,b) (((a)>(b))?(a):(b))
+
 
 #endif /* CURRENT_CONTROLLER_H_ */

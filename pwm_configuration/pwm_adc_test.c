@@ -10,15 +10,27 @@
  * ADC Input                        ->  P4.0
  * P1.1     ->  turn on switch      ->  P1.1
  * P2.4     ->  disable signal      ->  P2.4
+ * P5.6     ->  heartbeat
  */
 
+#define DEBUG
+
 const uint16_t DUTY_MAX=255;    //maximum value of duty
-uint8_t duty=100;               //duty cycle
+uint16_t duty=100;               //duty cycle
 bool run_main_loop=false;       //flag which triggers execution of one control loop cycle
 bool start_control=false;        //this flag is set when the controller should start running
 volatile uint16_t result;       //result of adc conversion
+//adc related parameters/variables
 uint32_t adc_sum = 0;
 uint16_t no_samples = 0;
+const uint16_t va_max=0x3FFF;         //maximum output of the 14bit ADC
+const uint16_t va_offset=0x1FFF;      //nominal offset (needs to be calibrated)
+#define VCC 3.3
+#define SENSITIVITY 0.286
+#define VAOFFSET 8192.0
+const float conv_const=VCC/(SENSITIVITY*VAOFFSET);
+//control related parameters
+const float vdc=30.0;
 struct pi_controller_32 current_controller={0.0,0.0,0.0,4.0,8.256550961220959e+02,200e-6};
 
 void init_adc(void){
@@ -69,7 +81,7 @@ void init_adc(void){
     /* enable the ADC, enable conversion
      * Hint: it may be useful to disable the ADC conversion when processing the results (e.g. unset ADC14_CTL0_ENC)
      */
-    ADC14->CTL0 |= ADC14_CTL0_ON | ADC14_CTL0_ENC;
+    ADC14->CTL0 |= ADC14_CTL0_ON;
 }
 
 // ADC14 interrupt service routine
@@ -130,6 +142,9 @@ void init_clk(void){
 }
 
 void init_gpio(void){
+    //disable signal (P2.4)
+    P2->DIR |= BIT4;
+    P2->OUT |= BIT4;
     //P7.7  ->  TA1.1 (duty)
     P7->DIR |= BIT7;                        // P7.7 output
     P7->SEL0 |= BIT7;                       // P7.7 option select
@@ -145,9 +160,13 @@ void init_gpio(void){
     P1->IES = BIT1;                         // interrupt on falling edge
     P1->IE = BIT1;                          // enable interrupt of Port1.1
     NVIC->ISER[1] = 1 << ((PORT1_IRQn) & 31);   //enable Port1 interrupt of ARM Processor
-    //disable signal (P2.4)
-    P2->DIR |= BIT4;
-    P2->OUT |= BIT4;
+    //P5.6 - heartbeat
+    P5->DIR |= BIT6;
+    P5->SEL0 &=(~BIT6);
+    P5->SEL1 &=(~BIT6);
+    //P1.0 - error led
+    P1->DIR |= BIT0;
+    P1->OUT &= (~BIT0);
 }
 
 //init the timer responsible for triggering the main control loop
@@ -162,7 +181,7 @@ void init_cl_timer(void){
     //configure Capture-Compare Register CCR
     TIMER_A0->CCTL[0] &= ~TIMER_A_CCTLN_CCIFG;      //reset the capture-compare interrupt flag
     TIMER_A0->CCTL[0] = TIMER_A_CCTLN_CCIE;         //enable the interrupt request of this cc register
-    TIMER_A0->CCR[0] = 0x0FFF;
+    TIMER_A0->CCR[0] = 0x1FFF;
 
     // Enable global interrupt
     __enable_irq();
@@ -195,11 +214,25 @@ void init_pwm_adc(void){
 
 }
 
+void fatal_error(void){
+    //set error led
+    P1->OUT |= BIT0;
+    //set disable pin
+    P2->OUT |= BIT4;
+    while(1){
+        //loop forever
+    }
+}
 
 void PORT1_IRQHandler(void){
-    start_control=true;
     //clear P1 interrupt flag (important: otherwise infinite interrupt loop)
     P1->IFG &= ~BIT1;
+
+    //enable the ADC conversions
+    ADC14->CTL0 |= ADC14_CTL0_ENC;
+
+    //trigger a main control loop run
+    start_control=true;
 }
 
 
@@ -207,7 +240,8 @@ void TA0_0_IRQHandler(void){
     // Clear the compare interrupt flag
     TIMER_A0->CCTL[0] &= ~TIMER_A_CCTLN_CCIFG;
     //set the flag to run the main loop
-    run_main_loop=true;
+    if(no_samples>8)
+        run_main_loop=true;
 }
 
 int main(void)
@@ -223,18 +257,50 @@ int main(void)
 
     //main control loop
     uint32_t counter_cl=0;
+    float i_ref=1.0;
+
+    #ifdef DEBUG
+    uint32_t maxi=0;
+    uint16_t max_nosamples=0;
+    uint32_t amax=0;
+    float imax=0.0;
+    #endif
+
     while(1){
         if(run_main_loop&start_control){
                 counter_cl++;
+                if(no_samples<3)
+                    fatal_error();
                 //calculate the average current signal measured
                 uint32_t adc_avg = adc_sum/no_samples;
+                uint32_t adc_avg_wooff = adc_avg-0x1FFF;
+                float i_meas=conv_const*(float)adc_avg_wooff;
+                #ifdef DEBUG
+                if(i_meas>imax){
+                    imax=i_meas;
+                    amax=adc_sum;
+                    maxi=counter_cl;
+                    max_nosamples=no_samples;
+                }
+                #endif
+                //reset adc variables
                 adc_sum=0;
                 no_samples=0;
 
-                //toggle P1.1
-                uint8_t p11val=P1->IN;
+                //calculate & execute control law
+                float err=i_ref-i_meas;
+                float u_norm=current_controller.kp/vdc*err;
+                //set the duty cycle
+                if(u_norm>1.0)
+                    duty=255;
+                else if(u_norm<-1.0)
+                    duty=0;
+                else
+                    duty=DUTY_MAX/2+(u_norm)*(DUTY_MAX/2);
 
-                P2->OUT &= ~(BIT4);     //set the disable signal on P2.4 to low
+                P5->OUT = (P5->OUT)^(BIT6);     //toggle P5.6 (heartbeat)
+
+                P2->OUT &= ~(BIT6);             //set the disable signal on P2.4 to low
                 run_main_loop=false;
         }
     }
