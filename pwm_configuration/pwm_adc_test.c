@@ -1,5 +1,6 @@
 #include "ti/devices/msp432p4xx/inc/msp.h"
 #include <stdbool.h>
+#include "current_controller.h"
 
 /*
  * Peripherals Overview
@@ -7,25 +8,18 @@
  * TA1.2    ->  adc trigger         ->  P7.6
  * TA0.0    ->  main cl interrupt
  * ADC Input                        ->  P4.0
+ * P1.1     ->  turn on switch      ->  P1.1
+ * P2.4     ->  disable signal      ->  P2.4
  */
 
 const uint16_t DUTY_MAX=255;    //maximum value of duty
-uint8_t duty=0;                 //duty cycle
+uint8_t duty=100;               //duty cycle
 bool run_main_loop=false;       //flag which triggers execution of one control loop cycle
+bool start_control=false;        //this flag is set when the controller should start running
 volatile uint16_t result;       //result of adc conversion
 uint32_t adc_sum = 0;
 uint16_t no_samples = 0;
-
-void error(void)
-{
-    volatile uint32_t i;
-
-    while (1)
-    {
-        P1->OUT ^= BIT0;
-        for(i = 20000; i > 0; i--);           // Blink LED forever
-    }
-}
+struct pi_controller_32 current_controller={0.0,0.0,0.0,4.0,8.256550961220959e+02,200e-6};
 
 void init_adc(void){
     // set the s&h time to 16 ADCCLK cycles
@@ -91,8 +85,6 @@ void init_clk(void){
     WDT_A->CTL = WDT_A_CTL_PW |
                  WDT_A_CTL_HOLD;            // Stop WDT
 
-    P1->DIR |= BIT0;                        // P1.0 set as output
-
     /* NOTE: This example assumes the default power state is AM0_LDO.
      * Refer to  msp432p401x_pcm_0x code examples for more complete PCM
      * operations to exercise various power state transitions between active
@@ -104,15 +96,15 @@ void init_clk(void){
     /* Get current power state, if it's not AM0_LDO, error out */
     currentPowerState = PCM->CTL0 & PCM_CTL0_CPM_MASK;
     if (currentPowerState != PCM_CTL0_CPM_0)
-        error();
+        while(1){}
 
     while ((PCM->CTL1 & PCM_CTL1_PMR_BUSY));
     PCM->CTL0 = PCM_CTL0_KEY_VAL | PCM_CTL0_AMR_1;
     while ((PCM->CTL1 & PCM_CTL1_PMR_BUSY));
     if (PCM->IFG & PCM_IFG_AM_INVALID_TR_IFG)
-        error();                            // Error if transition was not successful
+        while(1){}                            // Error if transition was not successful
     if ((PCM->CTL0 & PCM_CTL0_CPM_MASK) != PCM_CTL0_CPM_1)
-        error();                            // Error if device is not in AM1_LDO mode
+        while(1){}                            // Error if device is not in AM1_LDO mode
 
     /* Step 2: Configure Flash wait-state to 1 for both banks 0 & 1 */
     FLCTL->BANK0_RDCTL = (FLCTL->BANK0_RDCTL & ~(FLCTL_BANK0_RDCTL_WAIT_MASK)) |
@@ -146,6 +138,16 @@ void init_gpio(void){
     P7->DIR |= BIT6;                        // P7.6 output
     P7->SEL0 |= BIT6;                       // P7.6 option select
     P7->SEL1 &= (~BIT6);                    // P7.6 option select
+    //interrupt from button
+    P1->DIR &= (~BIT1);                     // P1.1 input (pull down switch)
+    P1->REN |= BIT1;                        // enable pull-up
+    P1->OUT |= BIT1;                        // enable pull-up
+    P1->IES = BIT1;                         // interrupt on falling edge
+    P1->IE = BIT1;                          // enable interrupt of Port1.1
+    NVIC->ISER[1] = 1 << ((PORT1_IRQn) & 31);   //enable Port1 interrupt of ARM Processor
+    //disable signal (P2.4)
+    P2->DIR |= BIT4;
+    P2->OUT |= BIT4;
 }
 
 //init the timer responsible for triggering the main control loop
@@ -194,13 +196,19 @@ void init_pwm_adc(void){
 }
 
 
+void PORT1_IRQHandler(void){
+    start_control=true;
+    //clear P1 interrupt flag (important: otherwise infinite interrupt loop)
+    P1->IFG &= ~BIT1;
+}
+
+
 void TA0_0_IRQHandler(void){
     // Clear the compare interrupt flag
     TIMER_A0->CCTL[0] &= ~TIMER_A_CCTLN_CCIFG;
     //set the flag to run the main loop
     run_main_loop=true;
 }
-
 
 int main(void)
 {
@@ -216,20 +224,18 @@ int main(void)
     //main control loop
     uint32_t counter_cl=0;
     while(1){
-        /*
-        if((ADC14->IFGR0)&(ADC14_IFGR0_IFG0)){
-            counter++;
-            //adc result has been written to memory
-            result=ADC14->MEM[0];
-        }*/
-        if(run_main_loop){
-            counter_cl++;
-            //calculate the average current signal measured
-            uint32_t adc_avg = adc_sum/no_samples;
-            adc_sum=0;
-            no_samples=0;
+        if(run_main_loop&start_control){
+                counter_cl++;
+                //calculate the average current signal measured
+                uint32_t adc_avg = adc_sum/no_samples;
+                adc_sum=0;
+                no_samples=0;
 
-            run_main_loop=false;
+                //toggle P1.1
+                uint8_t p11val=P1->IN;
+
+                P2->OUT &= ~(BIT4);     //set the disable signal on P2.4 to low
+                run_main_loop=false;
         }
     }
 }
