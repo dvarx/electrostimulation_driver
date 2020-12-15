@@ -24,7 +24,7 @@ volatile uint16_t result;       //result of adc conversion
 uint32_t adc_sum = 0;
 uint16_t no_samples = 0;
 const uint16_t va_max=0x3FFF;         //maximum output of the 14bit ADC
-const uint16_t va_offset=0x1FFF;      //nominal offset (needs to be calibrated)
+const uint16_t va_offset=6961;        //measured offset (needs to be calibrated) (nominal 0x1FFF=8192)
 #define VCC 3.3
 #define SENSITIVITY 0.286
 #define VAOFFSET 8192.0
@@ -193,7 +193,7 @@ void init_pwm_adc(void){
     TIMER_A1->CTL = TIMER_A_CTL_TASSEL_2 |  // SMCLK
             TIMER_A_CTL_MC_1 |              // Up Mode
             TIMER_A_CTL_CLR |               // Clear TAR
-            TIMER_A_CTL_ID_0;               // Clk /1
+            TIMER_A_CTL_ID_1;               // Clk /2
     TIMER_A1->EX0 = TIMER_A_EX0_TAIDEX_0;   // Clk /1
     //configure CCR TA1.0 (ceiling register)
     TIMER_A1->CCTL[0] = TIMER_A_CCTLN_OUTMOD_4; // CCR4 toggle mode
@@ -268,11 +268,12 @@ int main(void)
     while(1){
         if(run_main_loop&start_control){
                 counter_cl++;
-                if(no_samples<3)
-                    fatal_error();
+                //if we do not have enough samples, skip control cycle
+                if(no_samples<8)
+                    continue;
                 //calculate the average current signal measured
                 uint32_t adc_avg = adc_sum/no_samples;
-                uint32_t adc_avg_wooff = adc_avg-0x1FFF;
+                int32_t adc_avg_wooff = adc_avg-va_offset;
                 float i_meas=conv_const*(float)adc_avg_wooff;
                 #ifdef DEBUG
                 if(i_meas>imax){
@@ -299,7 +300,7 @@ int main(void)
 
                 P5->OUT = (P5->OUT)^(BIT6);     //toggle P5.6 (heartbeat)
 
-                P2->OUT &= ~(BIT6);             //set the disable signal on P2.4 to low
+                P2->OUT &= ~(BIT4);             //set the disable signal on P2.4 to low
                 run_main_loop=false;
         }
     }
