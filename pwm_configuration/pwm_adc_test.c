@@ -2,7 +2,7 @@
 #include <stdbool.h>
 #include "current_controller.h"
 #include <ti/devices/msp432p4xx/driverlib/driverlib.h>
-
+#include <math.h>
 
 /*
  * Peripherals Overview
@@ -319,16 +319,23 @@ int main(void)
 
     while(1){
         if(run_main_loop&start_control){
-                counter_cl=(counter_cl+1)%10000;
-                i_ref=1.0;
-                if(counter_cl>5000)
-                    i_ref=1.0;
+            //calculation of reference current
+            //sinusoidal test current
+//                float control_loop_dT=1.0/5000.0;
+//                float time=counter_cl*control_loop_dT;
+//                i_ref=1*sin(2*M_PI*50*time);
+//                counter_cl++;
+                counter_cl=(counter_cl+1)%2000;
+                i_ref=2.0;
+                if(counter_cl>1000)
+                    i_ref=4.0;
                 else
-                    i_ref=-1.0;
-                //if we do not have enough samples, skip control cycle
+                    i_ref=-4.0;
+
+            //if we do not have enough samples, skip control cycle
                 if(no_samples<8)
                     continue;
-                //calculate the average current signal measured
+            //calculate the average current signal measured
                 uint32_t adc_avg = adc_sum/no_samples;
                 int32_t adc_avg_wooff = adc_avg-va_offset;
                 float i_meas=-conv_const*(float)adc_avg_wooff;
@@ -340,14 +347,14 @@ int main(void)
                     max_nosamples=no_samples;
                 }
                 #endif
-                //reset adc variables
+            //reset adc variables
                 adc_sum=0;
                 no_samples=0;
 
-                //calculate & execute control law
+            //calculate & execute control law
                 float err=i_ref-i_meas;
                 float u_norm=current_controller.kp/vdc*err;
-                //set the duty cycle
+            //set the duty cycle
                 if(u_norm>1.0)
                     duty=0;
                 else if(u_norm<-1.0)
