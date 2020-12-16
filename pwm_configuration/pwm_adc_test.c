@@ -16,7 +16,7 @@
 #define DEBUG
 
 const uint16_t DUTY_MAX=255;    //maximum value of duty
-uint16_t duty=100;               //duty cycle
+uint16_t duty=255/2;               //duty cycle
 bool run_main_loop=false;       //flag which triggers execution of one control loop cycle
 bool start_control=false;        //this flag is set when the controller should start running
 volatile uint16_t result;       //result of adc conversion
@@ -256,7 +256,7 @@ int main(void)
 
     //main control loop
     uint32_t counter_cl=0;
-    float i_ref=1.0;
+    float i_ref=0.2;
 
     #ifdef DEBUG
     uint32_t maxi=0;
@@ -267,14 +267,19 @@ int main(void)
 
     while(1){
         if(run_main_loop&start_control){
-                counter_cl++;
+                counter_cl=(counter_cl+1)%10000;
+                i_ref=1.0;
+                if(counter_cl>5000)
+                    i_ref=1.0;
+                else
+                    i_ref=-1.0;
                 //if we do not have enough samples, skip control cycle
                 if(no_samples<8)
                     continue;
                 //calculate the average current signal measured
                 uint32_t adc_avg = adc_sum/no_samples;
                 int32_t adc_avg_wooff = adc_avg-va_offset;
-                float i_meas=conv_const*(float)adc_avg_wooff;
+                float i_meas=-conv_const*(float)adc_avg_wooff;
                 #ifdef DEBUG
                 if(i_meas>imax){
                     imax=i_meas;
@@ -292,11 +297,12 @@ int main(void)
                 float u_norm=current_controller.kp/vdc*err;
                 //set the duty cycle
                 if(u_norm>1.0)
-                    duty=255;
-                else if(u_norm<-1.0)
                     duty=0;
+                else if(u_norm<-1.0)
+                    duty=255;
                 else
-                    duty=DUTY_MAX/2+(u_norm)*(DUTY_MAX/2);
+                    duty=DUTY_MAX/2-(u_norm)*(DUTY_MAX/2);
+                TIMER_A1->CCR[1]=duty;
 
                 P5->OUT = (P5->OUT)^(BIT6);     //toggle P5.6 (heartbeat)
 
