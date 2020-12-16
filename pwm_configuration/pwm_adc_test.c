@@ -13,6 +13,7 @@
  * P1.1     ->  turn on switch      ->  P1.1
  * P2.4     ->  disable signal      ->  P2.4
  * P5.6     ->  heartbeat
+ * P5.5     ->  ssr enable          ->  P5.5
  */
 
 #define DEBUG
@@ -22,6 +23,7 @@ uint16_t duty=255/2;               //duty cycle
 bool run_main_loop=false;       //flag which triggers execution of one control loop cycle
 bool start_control=false;        //this flag is set when the controller should start running
 volatile uint16_t result;       //result of adc conversion
+bool closed_loop=false;
 //adc related parameters/variables
 uint32_t adc_sum = 0;
 uint16_t no_samples = 0;
@@ -185,6 +187,9 @@ void init_gpio(void){
     //P1.0 - error led
     P1->DIR |= BIT0;
     P1->OUT &= (~BIT0);
+    //P5.5 - ssr enable
+    P5->DIR |= BIT5;
+
 }
 
 //init the timer responsible for triggering the main control loop
@@ -319,6 +324,7 @@ int main(void)
 
     while(1){
         if(run_main_loop&start_control){
+            if(closed_loop){
             //calculation of reference current
             //sinusoidal test current
 //                float control_loop_dT=1.0/5000.0;
@@ -367,6 +373,26 @@ int main(void)
 
                 P2->OUT &= ~(BIT4);             //set the disable signal on P2.4 to low
                 run_main_loop=false;
+            } //end closed loop
+            else{ //open loop resonant actuation
+                //toggle the ssr for test purposes
+                counter_cl=(counter_cl+1)%5000;
+                if(counter_cl<2500)
+                    P5->OUT |= BIT5;
+                else
+                    P5->OUT &= (~BIT5);
+                //formula for PWM: f_pwm=f_0/CCR[0], f_0 at the moment is 12MHz
+                duty=410/2;
+                TIMER_A1->CCR[0]=410;
+                TIMER_A1->CCR[1]=duty;
+                //set frequency of PWM
+                TIMER_A1->CTL |= TIMER_A_CTL_ID_2;
+                TIMER_A1->CTL &= (~TIMER_A_CTL_ID_1);
+                P5->OUT = (P5->OUT)^(BIT6);     //toggle P5.6 (heartbeat)
+                P2->OUT &= ~(BIT4);             //set the disable signal on P2.4 to low
+
+                run_main_loop=false;
+            } //end open loop resonant actuation
         }
     }
 }
