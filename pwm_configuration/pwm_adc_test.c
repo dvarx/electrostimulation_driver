@@ -8,6 +8,7 @@
  * Peripherals Overview
  * TA1.1    ->  duty                ->  P7.7
  * TA1.2    ->  adc trigger         ->  P7.6
+ * TA1.3    ->  ¬duty               ->  P7.5
  * TA0.0    ->  main cl interrupt
  * ADC Input                        ->  P4.0
  * P1.1     ->  turn on switch      ->  P1.1
@@ -23,7 +24,7 @@ uint16_t duty=255/2;               //duty cycle
 bool run_main_loop=false;       //flag which triggers execution of one control loop cycle
 bool start_control=false;        //this flag is set when the controller should start running
 volatile uint16_t result;       //result of adc conversion
-bool closed_loop=false;
+bool closed_loop=true;
 //adc related parameters/variables
 uint32_t adc_sum = 0;
 uint16_t no_samples = 0;
@@ -173,6 +174,10 @@ void init_gpio(void){
     P7->DIR |= BIT6;                        // P7.6 output
     P7->SEL0 |= BIT6;                       // P7.6 option select
     P7->SEL1 &= (~BIT6);                    // P7.6 option select
+    //P7.5 ¬duty
+    P7->SEL0 |= BIT5;
+    P7->SEL1 &= (~BIT5);
+    P7->DIR |= BIT5;
     //interrupt from button
     P1->DIR &= (~BIT1);                     // P1.1 input (pull down switch)
     P1->REN |= BIT1;                        // enable pull-up
@@ -189,7 +194,6 @@ void init_gpio(void){
     P1->OUT &= (~BIT0);
     //P5.5 - ssr enable
     P5->DIR |= BIT5;
-
 }
 
 //init the timer responsible for triggering the main control loop
@@ -234,7 +238,15 @@ void init_pwm_adc(void){
     else
         TIMER_A1->CCR[2] = (DUTY_MAX/2)+(TIMER_A1->CCR[1])/2;
     TIMER_A1->CCTL[2] = TIMER_A_CCTLN_OUTMOD_3; // CCR4 toggle mode for ADC triggering
+    //configure CCR TA1.3 as the inverse duty cycle
+    TIMER_A1->CCR[3] = duty;                     //this value corresponds to the PWM value in [0...255]
+    TIMER_A1->CCTL[3] = TIMER_A_CCTLN_OUTMOD_6; // CCR4 toggle mode for PWM generation
+}
 
+inline void set_duty(uint16_t d){
+    //set the duty CCR and the ¬duty CCR
+    TIMER_A1->CCR[1]=d;
+    TIMER_A1->CCR[3]=d;
 }
 
 void fatal_error(void){
@@ -367,7 +379,7 @@ int main(void)
                     duty=255;
                 else
                     duty=DUTY_MAX/2-(u_norm)*(DUTY_MAX/2);
-                TIMER_A1->CCR[1]=duty;
+                set_duty(duty);
 
                 P5->OUT = (P5->OUT)^(BIT6);     //toggle P5.6 (heartbeat)
 
