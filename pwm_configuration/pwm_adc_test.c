@@ -8,7 +8,7 @@
  * Peripherals Overview
  * TA1.1    ->  duty                ->  P7.7
  * TA1.2    ->  adc trigger         ->  P7.6
- * TA1.3    ->  ¬duty               ->  P7.5
+ * TA1.3    ->  ¬duty               ->  P7.5    ! Make sure duty and ¬duty are connected in the right order, otherwise current controller unstable
  * TA0.0    ->  main cl interrupt
  * ADC Input                        ->  P4.0
  * P1.1     ->  turn on switch      ->  P1.1
@@ -339,16 +339,18 @@ int main(void)
             if(closed_loop){
             //calculation of reference current
             //sinusoidal test current
-//                float control_loop_dT=1.0/5000.0;
-//                float time=counter_cl*control_loop_dT;
-//                i_ref=1*sin(2*M_PI*50*time);
-//                counter_cl++;
-                counter_cl=(counter_cl+1)%2000;
-                i_ref=2.0;
-                if(counter_cl>1000)
-                    i_ref=4.0;
-                else
-                    i_ref=-4.0;
+                float control_loop_dT=1.0/5000.0;
+                float time=counter_cl*control_loop_dT;
+                i_ref=1*sin(2*M_PI*50*time);
+                counter_cl++;
+            //constant current test
+//                i_ref=3.0;
+            //stepping current test
+//              counter_cl=(counter_cl+1)%5000;
+//              if(counter_cl>1000)
+//                  i_ref=4.0;
+//              else
+//                  i_ref=-4.0;
 
             //if we do not have enough samples, skip control cycle
                 if(no_samples<8)
