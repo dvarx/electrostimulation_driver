@@ -12,6 +12,7 @@
  * TA0.0    ->  main cl interrupt
  * ADC Input                        ->  P4.0
  * P1.1     ->  turn on switch      ->  P1.1
+ * P1.4     ->  mode change request ->  P1.4
  * P2.4     ->  disable signal      ->  P2.4
  * P5.6     ->  heartbeat
  * P5.5     ->  ssr enable          ->  P5.5
@@ -70,6 +71,7 @@ enum system_state state=CLOSED_LOOP;
 enum system_state nextState=CLOSED_LOOP;
 const uint16_t n_shutdown=10+2;                 //number of cycles to wait before energy is assumed to be fed back into DC link
 uint16_t transition_counter=0;
+bool request_opmode_change=false;                //this bit is set when a change of state from CLOSED_LOOP to RESONANT is requested
 
 void init_adc(void){
     // set the s&h time to 16 ADCCLK cycles
@@ -195,12 +197,22 @@ void init_gpio(void){
     P7->SEL0 |= BIT5;
     P7->SEL1 &= (~BIT5);
     P7->DIR |= BIT5;
-    //interrupt from button
+    //interrupt from buttons
+
+
     P1->DIR &= (~BIT1);                     // P1.1 input (pull down switch)
     P1->REN |= BIT1;                        // enable pull-up
-    P1->OUT |= BIT1;                        // enable pull-up
     P1->IES = BIT1;                         // interrupt on falling edge
     P1->IE = BIT1;                          // enable interrupt of Port1.1
+
+
+    P1->DIR &= (~BIT4);                     // P1.4 input (pull down switch)
+    P1->REN |= BIT4;                        // enable pull-up
+    P1->IES |= BIT4;                        // interrupt on falling edge
+    P1->IFG=0;                              // ISSUE: for some reason we need to reset the interrupt register because
+                                            // it would otherwise always throw an interrupt on 1.4 when starting up
+    P1->IE |= BIT4;                         // enable interrupt of Port1.4
+
     NVIC->ISER[1] = 1 << ((PORT1_IRQn) & 31);   //enable Port1 interrupt of ARM Processor
     //P5.6 - heartbeat
     P5->DIR |= BIT6;
@@ -272,14 +284,22 @@ void fatal_error(void){
 }
 
 void PORT1_IRQHandler(void){
-    //clear P1 interrupt flag (important: otherwise infinite interrupt loop)
-    P1->IFG &= ~BIT1;
-
     //enable the ADC conversions
     ADC14->CTL0 |= ADC14_CTL0_ENC;
 
-    //trigger a main control loop run
-    start_control=true;
+    //check if Button 1 was pressed
+    if(P1->IFG &= BIT1){
+        //clear P1 interrupt flag (important: otherwise infinite interrupt loop)
+        P1->IFG &= ~BIT1;
+        //trigger a main control loop run
+        start_control=true;
+    }
+    else{
+        //clear P1 interrupt flag (important: otherwise infinite interrupt loop)
+        P1->IFG &= ~BIT4;
+        //set this bit to request a change of operational mode
+        request_opmode_change=true;
+    }
 }
 
 void TA0_0_IRQHandler(void){
@@ -328,12 +348,12 @@ int main(void)
     WDT_A->CTL = WDT_A_CTL_PW |             // Stop WDT
             WDT_A_CTL_HOLD;
 
-    init_gpio();
     init_clk();
     init_adc();
     init_pwm_adc();
     init_cl_timer();
     init_uart();
+    init_gpio();
 
     //main control loop
     uint32_t counter_cl=0;
@@ -454,8 +474,6 @@ int main(void)
                 //set frequency of PWM
                 TIMER_A1->CTL |= TIMER_A_CTL_ID_2;
                 TIMER_A1->CTL &= (~TIMER_A_CTL_ID_1);
-                P5->OUT = (P5->OUT)^(BIT6);     //toggle P5.6 (heartbeat)
-                P2->OUT &= ~(BIT4);             //set the disable signal on P2.4 to low
 
                 ////////////
                 //set output signals
