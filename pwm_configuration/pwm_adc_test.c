@@ -17,6 +17,17 @@
  * P5.5     ->  ssr enable          ->  P5.5
  */
 
+inline void set_disable(void){P2->OUT |= BIT4;};
+inline void unset_disable(void){P2->OUT &= ~BIT4;};
+inline void set_ssrenable(void){P5->OUT |= BIT5;};
+inline void unset_ssrenable(void){P5->OUT &= ~BIT5;};
+inline void toggle_heartbeat(void){P5->OUT ^= BIT6;};
+inline void set_duty(uint16_t d){
+    //set the duty CCR and the ¬duty CCR
+    TIMER_A1->CCR[1]=d;
+    TIMER_A1->CCR[3]=d;
+}
+
 #define DEBUG
 
 const uint16_t DUTY_MAX=255;    //maximum value of duty
@@ -53,6 +64,12 @@ const eUSCI_UART_ConfigV1 uartConfig =
         EUSCI_A_UART_OVERSAMPLING_BAUDRATE_GENERATION,  // Oversampling
         EUSCI_A_UART_8_BIT_LEN                  // 8 bit data length
 };
+//state machine related parameters and variables
+enum system_state{CLOSED_LOOP,CL_TO_RES,RES_TO_CL,RESONANT};
+enum system_state state=CLOSED_LOOP;
+enum system_state nextState=CLOSED_LOOP;
+const uint16_t n_shutdown=10+2;                 //number of cycles to wait before energy is assumed to be fed back into DC link
+uint16_t transition_counter=0;
 
 void init_adc(void){
     // set the s&h time to 16 ADCCLK cycles
@@ -243,11 +260,6 @@ void init_pwm_adc(void){
     TIMER_A1->CCTL[3] = TIMER_A_CCTLN_OUTMOD_6; // CCR4 toggle mode for PWM generation
 }
 
-inline void set_duty(uint16_t d){
-    //set the duty CCR and the ¬duty CCR
-    TIMER_A1->CCR[1]=d;
-    TIMER_A1->CCR[3]=d;
-}
 
 void fatal_error(void){
     //set error led
@@ -336,15 +348,53 @@ int main(void)
 
     while(1){
         if(run_main_loop&start_control){
-            if(closed_loop){
-            //calculation of reference current
+            state=nextState;
+            //------------------------------
+            //run the Moore state machine, determine nextState
+            //------------------------------
+            switch(state){
+            case CLOSED_LOOP:
+                nextState=CLOSED_LOOP;
+                break;
+            case CL_TO_RES:
+                if(transition_counter<n_shutdown){
+                    transition_counter++;
+                    nextState=CL_TO_RES;
+                }
+                else{
+                    transition_counter=0;
+                    nextState=RESONANT;
+                }
+                break;
+            case RES_TO_CL:
+                if(transition_counter<n_shutdown){
+                    transition_counter++;
+                    nextState=CL_TO_RES;
+                }
+                else{
+                    transition_counter=0;
+                    nextState=RESONANT;
+                }
+                break;
+            case RESONANT:
+                nextState=RESONANT;
+                break;
+            }
+
+            //------------------------------
+            //set the outputs
+            //------------------------------
+            if(state==CLOSED_LOOP){
+                ////////////
+                //calculation of reference current
+                ////////////
             //sinusoidal test current
-                float control_loop_dT=1.0/5000.0;
-                float time=counter_cl*control_loop_dT;
-                i_ref=1*sin(2*M_PI*50*time);
-                counter_cl++;
+//                float control_loop_dT=1.0/5000.0;
+//                float time=counter_cl*control_loop_dT;
+//                i_ref=1*sin(2*M_PI*50*time);
+//                counter_cl++;
             //constant current test
-//                i_ref=3.0;
+                i_ref=3.0;
             //stepping current test
 //              counter_cl=(counter_cl+1)%5000;
 //              if(counter_cl>1000)
@@ -352,6 +402,9 @@ int main(void)
 //              else
 //                  i_ref=-4.0;
 
+                ////////////
+                //compute the measured current
+                ////////////
             //if we do not have enough samples, skip control cycle
                 if(no_samples<8)
                     continue;
@@ -371,7 +424,9 @@ int main(void)
                 adc_sum=0;
                 no_samples=0;
 
-            //calculate & execute control law
+                ////////////
+                //calculate and execute control law
+                ////////////
                 float err=i_ref-i_meas;
                 float u_norm=current_controller.kp/vdc*err;
             //set the duty cycle
@@ -381,20 +436,17 @@ int main(void)
                     duty=255;
                 else
                     duty=DUTY_MAX/2-(u_norm)*(DUTY_MAX/2);
+
+                ////////////
+                //set output signals
+                ////////////
                 set_duty(duty);
-
-                P5->OUT = (P5->OUT)^(BIT6);     //toggle P5.6 (heartbeat)
-
-                P2->OUT &= ~(BIT4);             //set the disable signal on P2.4 to low
+                toggle_heartbeat();     //toggle the heartbeat
+                unset_disable();        //set the disable bit to low
+                set_ssrenable();        //enable ssr to bypass the cap
                 run_main_loop=false;
             } //end closed loop
-            else{ //open loop resonant actuation
-                //toggle the ssr for test purposes
-                counter_cl=(counter_cl+1)%5000;
-                if(counter_cl<2500)
-                    P5->OUT |= BIT5;
-                else
-                    P5->OUT &= (~BIT5);
+            else if(state==RESONANT){ //open loop resonant actuation
                 //formula for PWM: f_pwm=f_0/CCR[0], f_0 at the moment is 12MHz
                 duty=410/2;
                 TIMER_A1->CCR[0]=410;
@@ -405,8 +457,34 @@ int main(void)
                 P5->OUT = (P5->OUT)^(BIT6);     //toggle P5.6 (heartbeat)
                 P2->OUT &= ~(BIT4);             //set the disable signal on P2.4 to low
 
+                ////////////
+                //set output signals
+                ////////////
+                set_duty(duty);
+                toggle_heartbeat();         //toggle the heartbeat
+                unset_disable();            //set the disable bit to low
+                unset_ssrenable();          //unset ssrenable
+                run_main_loop=false;
                 run_main_loop=false;
             } //end open loop resonant actuation
-        }
+            else if(state==CL_TO_RES){
+                ////////////
+                //set output signals
+                ////////////
+                toggle_heartbeat();     //toggle the heartbeat
+                set_disable();          //set the disable bit to high, disabling all MOSFETs
+                set_ssrenable();        //enable ssr to bypass the cap
+                run_main_loop=false;
+            }
+            else if(state==RES_TO_CL){
+                ////////////
+                //set output signals
+                ////////////
+                toggle_heartbeat();         //toggle the heartbeat
+                set_disable();              //set the disable bit to high, disabling all MOSFETs
+                unset_ssrenable();          //keep ssr open such that oscillation continues
+                run_main_loop=false;
+            }
+            }
     }
 }
