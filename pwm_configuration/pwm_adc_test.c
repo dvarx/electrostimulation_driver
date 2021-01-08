@@ -20,8 +20,8 @@
 
 inline void set_disable(void){P2->OUT |= BIT4;};
 inline void unset_disable(void){P2->OUT &= ~BIT4;};
-inline void set_ssrenable(void){P5->OUT |= BIT5;};
-inline void unset_ssrenable(void){P5->OUT &= ~BIT5;};
+inline void set_ssrdisable(void){P5->OUT |= BIT5;};
+inline void unset_ssrdisable(void){P5->OUT &= ~BIT5;};
 inline void toggle_heartbeat(void){P5->OUT ^= BIT6;};
 inline void set_duty(uint16_t d){
     //set the duty CCR and the ¬duty CCR
@@ -69,7 +69,7 @@ const eUSCI_UART_ConfigV1 uartConfig =
 enum system_state{CLOSED_LOOP,CL_TO_RES,RES_TO_CL,RESONANT};
 enum system_state state=CLOSED_LOOP;
 enum system_state nextState=CLOSED_LOOP;
-const uint16_t n_shutdown=10+2;                 //number of cycles to wait before energy is assumed to be fed back into DC link
+const uint16_t n_shutdown=20+2;                 //number of cycles to wait before energy is assumed to be fed back into DC link
 uint16_t transition_counter=0;
 bool request_opmode_change=false;                //this bit is set when a change of state from CLOSED_LOOP to RESONANT is requested
 
@@ -272,6 +272,20 @@ void init_pwm_adc(void){
     TIMER_A1->CCTL[3] = TIMER_A_CCTLN_OUTMOD_6; // CCR4 toggle mode for PWM generation
 }
 
+//set the pwm frequency to the one used in cl mode
+
+inline void set_pwm_freq_cl(void){
+    //formula for PWM: f_pwm=f_0/CCR[0], f_0 at the moment is 12.8MHz
+    TIMER_A1->CCR[0]=DUTY_MAX;
+    TIMER_A1->CCR[1]=DUTY_MAX/2;
+}
+
+//set the pwm frequency to the one used in res mode
+inline void set_pwm_freq_res(void){
+    //formula for PWM: f_pwm=f_0/CCR[0], f_0 at the moment is 12.8MHz
+    TIMER_A1->CCR[0]=DUTY_MAX/2;
+    TIMER_A1->CCR[1]=DUTY_MAX/4;
+}
 
 void fatal_error(void){
     //set error led
@@ -374,7 +388,13 @@ int main(void)
             //------------------------------
             switch(state){
             case CLOSED_LOOP:
-                nextState=CLOSED_LOOP;
+                if(request_opmode_change){
+                    nextState=CL_TO_RES;
+                    request_opmode_change=false;
+                }
+                else{
+                    nextState=CLOSED_LOOP;
+                }
                 break;
             case CL_TO_RES:
                 if(transition_counter<n_shutdown){
@@ -389,15 +409,21 @@ int main(void)
             case RES_TO_CL:
                 if(transition_counter<n_shutdown){
                     transition_counter++;
-                    nextState=CL_TO_RES;
+                    nextState=RES_TO_CL;
                 }
                 else{
                     transition_counter=0;
-                    nextState=RESONANT;
+                    nextState=CLOSED_LOOP;
                 }
                 break;
             case RESONANT:
-                nextState=RESONANT;
+                if(request_opmode_change){
+                    nextState=RES_TO_CL;
+                    request_opmode_change=false;
+                }
+                else{
+                    nextState=RESONANT;
+                }
                 break;
             }
 
@@ -463,26 +489,16 @@ int main(void)
                 set_duty(duty);
                 toggle_heartbeat();     //toggle the heartbeat
                 unset_disable();        //set the disable bit to low
-                set_ssrenable();        //enable ssr to bypass the cap
+                unset_ssrdisable();        //enable ssr to bypass the cap
                 run_main_loop=false;
             } //end closed loop
             else if(state==RESONANT){ //open loop resonant actuation
-                //formula for PWM: f_pwm=f_0/CCR[0], f_0 at the moment is 12MHz
-                duty=410/2;
-                TIMER_A1->CCR[0]=410;
-                TIMER_A1->CCR[1]=duty;
-                //set frequency of PWM
-                TIMER_A1->CTL |= TIMER_A_CTL_ID_2;
-                TIMER_A1->CTL &= (~TIMER_A_CTL_ID_1);
-
                 ////////////
                 //set output signals
                 ////////////
-                set_duty(duty);
                 toggle_heartbeat();         //toggle the heartbeat
                 unset_disable();            //set the disable bit to low
-                unset_ssrenable();          //unset ssrenable
-                run_main_loop=false;
+                set_ssrdisable();          //unset ssrenable
                 run_main_loop=false;
             } //end open loop resonant actuation
             else if(state==CL_TO_RES){
@@ -491,7 +507,8 @@ int main(void)
                 ////////////
                 toggle_heartbeat();     //toggle the heartbeat
                 set_disable();          //set the disable bit to high, disabling all MOSFETs
-                set_ssrenable();        //enable ssr to bypass the cap
+                unset_ssrdisable();        //enable ssr to bypass the cap
+                set_pwm_freq_res();     //set the PWM frequency to the resonant frequency (50% duty)
                 run_main_loop=false;
             }
             else if(state==RES_TO_CL){
@@ -500,7 +517,8 @@ int main(void)
                 ////////////
                 toggle_heartbeat();         //toggle the heartbeat
                 set_disable();              //set the disable bit to high, disabling all MOSFETs
-                unset_ssrenable();          //keep ssr open such that oscillation continues
+                set_ssrdisable();          //keep ssr open such that oscillation continues
+                set_pwm_freq_cl();          //set the PWM frequency to the closed-loop frequency (50% duty)
                 run_main_loop=false;
             }
             }
