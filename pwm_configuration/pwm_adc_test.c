@@ -15,7 +15,7 @@
  * P1.4     ->  mode change request ->  P1.4
  * P2.4     ->  disable signal      ->  P2.4
  * P5.6     ->  heartbeat
- * P5.5     ->  ssr enable          ->  P5.5
+ * P5.5     ->  ssr disable          ->  P5.5
  */
 
 inline void set_disable(void){P2->OUT |= BIT4;};
