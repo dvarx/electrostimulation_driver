@@ -66,9 +66,9 @@ const eUSCI_UART_ConfigV1 uartConfig =
         EUSCI_A_UART_8_BIT_LEN                  // 8 bit data length
 };
 //state machine related parameters and variables
-enum system_state{CLOSED_LOOP,CL_TO_RES,RES_TO_CL,RESONANT};
-enum system_state state=CLOSED_LOOP;
-enum system_state nextState=CLOSED_LOOP;
+enum system_state{INIT,CLOSED_LOOP,CL_TO_RES,RES_TO_CL,RESONANT};
+enum system_state state=INIT;
+enum system_state nextState=INIT;
 const uint16_t n_shutdown=20+2;                 //number of cycles to wait before energy is assumed to be fed back into DC link
 uint16_t transition_counter=0;
 bool request_opmode_change=false;                //this bit is set when a change of state from CLOSED_LOOP to RESONANT is requested
@@ -382,12 +382,18 @@ int main(void)
     #endif
 
     while(1){
-        if(run_main_loop&start_control){
+        if(run_main_loop){
             state=nextState;
             //------------------------------
             //run the Moore state machine, determine nextState
             //------------------------------
             switch(state){
+            case INIT:
+                if(start_control)
+                    nextState=CLOSED_LOOP;
+                else
+                    nextState=INIT;
+                break;
             case CLOSED_LOOP:
                 if(request_opmode_change){
                     nextState=CL_TO_RES;
@@ -431,7 +437,15 @@ int main(void)
             //------------------------------
             //set the outputs
             //------------------------------
-            if(state==CLOSED_LOOP){
+            if(state==INIT){
+                ////////////
+                //set output signals
+                ////////////
+                toggle_heartbeat();         //toggle the heartbeat
+                set_disable();            //set the disable bit to low
+                unset_ssrdisable();          //unset ssrenable
+            }
+            else if(state==CLOSED_LOOP){
                 ////////////
                 //calculation of reference current
                 ////////////
@@ -491,7 +505,6 @@ int main(void)
                 toggle_heartbeat();     //toggle the heartbeat
                 unset_disable();        //set the disable bit to low
                 unset_ssrdisable();        //enable ssr to bypass the cap
-                run_main_loop=false;
             } //end closed loop
             else if(state==RESONANT){ //open loop resonant actuation
                 ////////////
@@ -500,7 +513,6 @@ int main(void)
                 toggle_heartbeat();         //toggle the heartbeat
                 unset_disable();            //set the disable bit to low
                 set_ssrdisable();          //unset ssrenable
-                run_main_loop=false;
             } //end open loop resonant actuation
             else if(state==CL_TO_RES){
                 ////////////
@@ -510,7 +522,6 @@ int main(void)
                 set_disable();          //set the disable bit to high, disabling all MOSFETs
                 unset_ssrdisable();        //enable ssr to bypass the cap
                 set_pwm_freq_res();     //set the PWM frequency to the resonant frequency (50% duty)
-                run_main_loop=false;
             }
             else if(state==RES_TO_CL){
                 ////////////
@@ -520,8 +531,10 @@ int main(void)
                 set_disable();              //set the disable bit to high, disabling all MOSFETs
                 set_ssrdisable();          //keep ssr open such that oscillation continues
                 set_pwm_freq_cl();          //set the PWM frequency to the closed-loop frequency (50% duty)
-                run_main_loop=false;
             }
+
+            run_main_loop=false;
+
             }
     }
 }
