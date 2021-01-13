@@ -282,9 +282,10 @@ inline void set_pwm_freq_cl(void){
 
 //set the pwm frequency to the one used in res mode
 inline void set_pwm_freq_res(void){
-    //formula for PWM: f_pwm=f_0/CCR[0], f_0 at the moment is 12.8MHz
-    TIMER_A1->CCR[0]=DUTY_MAX/2;
-    TIMER_A1->CCR[1]=DUTY_MAX/4;
+    //formula for PWM: f_pwm=f_0/CCR[0]*2, f_0 at the moment is 12.8MHz
+    //we set CCR[0]:=800, therefore the output frequency is 30kHz
+    TIMER_A1->CCR[0]=800;        //counter counts to CCR[0]
+    TIMER_A1->CCR[1]=800/2;        //counter toggles at CCR[1]
 }
 
 void fatal_error(void){
