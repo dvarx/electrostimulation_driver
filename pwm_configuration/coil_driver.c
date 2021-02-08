@@ -2,6 +2,7 @@
 #include <stdbool.h>
 #include "current_controller.h"
 #include <ti/devices/msp432p4xx/driverlib/driverlib.h>
+#include "state_machine.h"
 #include <math.h>
 
 /*
@@ -31,6 +32,7 @@ inline void set_duty(uint16_t d){
 
 #define DEBUG
 
+uint32_t res_freq=0;
 const uint16_t DUTY_MAX=255;    //maximum value of duty
 uint16_t duty=255/2;               //duty cycle
 bool run_main_loop=false;       //flag which triggers execution of one control loop cycle
@@ -66,12 +68,12 @@ const eUSCI_UART_ConfigV1 uartConfig =
         EUSCI_A_UART_8_BIT_LEN                  // 8 bit data length
 };
 //state machine related parameters and variables
-enum system_state{INIT,CLOSED_LOOP,CL_TO_RES,RES_TO_CL,RESONANT};
 enum system_state state=INIT;
 enum system_state nextState=INIT;
 const uint16_t n_shutdown=20+2;                 //number of cycles to wait before energy is assumed to be fed back into DC link
 uint16_t transition_counter=0;
 bool request_opmode_change=false;                //this bit is set when a change of state from CLOSED_LOOP to RESONANT is requested
+bool command_to_be_processed=false;
 
 char input_buffer[128];
 uint8_t input_pointer=0;
@@ -358,7 +360,15 @@ void EUSCIA0_IRQHandler(void)
     {
         //MAP_UART_transmitData(EUSCI_A0_BASE, MAP_UART_receiveData(EUSCI_A0_BASE));
         input_buffer[input_pointer]=MAP_UART_receiveData(EUSCI_A0_BASE);
-        input_pointer++;
+        //check if newline character received. each command ends with a newline character
+        //we replace the newline character with a string termination character for further processing
+        if(input_buffer[input_pointer]=='\r'){
+            command_to_be_processed=true;
+            input_buffer[input_pointer]='\0';
+            input_pointer=0;
+        }
+        else
+            input_pointer++;
     }
 
 }
@@ -437,6 +447,14 @@ int main(void)
                     nextState=RESONANT;
                 }
                 break;
+            }
+
+            //------------------------------
+            //parse input command
+            //------------------------------
+            if(command_to_be_processed){
+                parse_input(input_pointer);
+                command_to_be_processed=false;
             }
 
             //------------------------------
