@@ -24,17 +24,12 @@ inline void unset_disable(void){P2->OUT &= ~BIT4;};
 inline void set_ssrdisable(void){P5->OUT |= BIT5;};
 inline void unset_ssrdisable(void){P5->OUT &= ~BIT5;};
 inline void toggle_heartbeat(void){P5->OUT ^= BIT6;};
-inline void set_duty(uint16_t d){
-    //set the duty CCR and the ¬duty CCR
-    TIMER_A1->CCR[1]=d;
-    TIMER_A1->CCR[3]=d;
-}
 
 #define DEBUG
 
 uint32_t res_freq=0;
-const uint16_t DUTY_MAX=255;    //maximum value of duty
-uint16_t duty=255/2;               //duty cycle
+const uint16_t DUTY_MAX=1024;    //maximum value of duty
+uint16_t duty=512;               //duty cycle
 bool run_main_loop=false;       //flag which triggers execution of one control loop cycle
 bool start_control=false;        //this flag is set when the controller should start running
 volatile uint16_t result;       //result of adc conversion
@@ -288,15 +283,22 @@ inline void set_pwm_freq_cl(void){
     TIMER_A1->CCR[3] =DUTY_MAX/2;
 }
 
+inline void set_duty(uint16_t duty){
+    uint16_t counter_duty=(TIMER_A1->CCR[0]*duty)/1024;
+    TIMER_A1->CCR[1]=counter_duty;        //counter toggles at CCR[1]
+    //set inverted duty cycle as well
+    TIMER_A1->CCR[3] =counter_duty;
+}
+
 //set the pwm frequency to the one used in res mode
 inline void set_pwm_freq_res(int freq){
     //formula for PWM: f_pwm=f_0/CCR[0]*2, f_0 at the moment is 12.8MHz
     uint16_t counter_limit=12000000/freq*2;
     //we set CCR[0]:=800, therefore the output frequency is 30kHz
     TIMER_A1->CCR[0]=counter_limit;        //counter counts to CCR[0]
-    TIMER_A1->CCR[1]=counter_limit/2;        //counter toggles at CCR[1]
+    set_duty(DUTY_MAX/2);        //counter toggles at CCR[1]
     //set inverted duty cycle as well
-    TIMER_A1->CCR[3] =counter_limit/2;
+    set_duty(DUTY_MAX/2);
 }
 
 void fatal_error(void){
