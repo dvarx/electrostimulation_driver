@@ -32,7 +32,7 @@ inline void set_duty(uint16_t d){
 
 #define DEBUG
 
-uint32_t res_freq=0;
+uint32_t res_freq=50000;
 const uint16_t DUTY_MAX=255;    //maximum value of duty
 uint16_t duty=255/2;               //duty cycle
 bool run_main_loop=false;       //flag which triggers execution of one control loop cycle
@@ -289,13 +289,14 @@ inline void set_pwm_freq_cl(void){
 }
 
 //set the pwm frequency to the one used in res mode
-inline void set_pwm_freq_res(void){
+inline void set_pwm_freq_res(int freq){
     //formula for PWM: f_pwm=f_0/CCR[0]*2, f_0 at the moment is 12.8MHz
+    uint16_t counter_limit=12000000/freq*2;
     //we set CCR[0]:=800, therefore the output frequency is 30kHz
-    TIMER_A1->CCR[0]=800;        //counter counts to CCR[0]
-    TIMER_A1->CCR[1]=800/2;        //counter toggles at CCR[1]
+    TIMER_A1->CCR[0]=counter_limit;        //counter counts to CCR[0]
+    TIMER_A1->CCR[1]=counter_limit/2;        //counter toggles at CCR[1]
     //set inverted duty cycle as well
-    TIMER_A1->CCR[3] =800/2;
+    TIMER_A1->CCR[3] =counter_limit/2;
 }
 
 void fatal_error(void){
@@ -549,7 +550,7 @@ int main(void)
                 toggle_heartbeat();     //toggle the heartbeat
                 set_disable();          //set the disable bit to high, disabling all MOSFETs
                 unset_ssrdisable();        //enable ssr to bypass the cap
-                set_pwm_freq_res();     //set the PWM frequency to the resonant frequency (50% duty)
+                set_pwm_freq_res(res_freq);     //set the PWM frequency to the resonant frequency (50% duty)
             }
             else if(state==RES_TO_CL){
                 ////////////

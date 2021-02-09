@@ -21,6 +21,7 @@ const char SET_FREQ_CMD[]="!frq";
 void parse_input(uint8_t buffer_size){
     if(!strncmp(input_buffer,SET_FREQ_CMD,sizeof(SET_FREQ_CMD)/sizeof(char)-1)){
         res_freq=(uint32_t)atoi(input_buffer+sizeof(SET_FREQ_CMD)/sizeof(char)-1);
+        set_pwm_freq_res(res_freq);
     }
 }
 
