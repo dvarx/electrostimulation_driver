@@ -31,7 +31,6 @@ uint32_t res_freq=0;
 const uint16_t DUTY_MAX=1024;    //maximum value of duty
 uint16_t duty=512;               //duty cycle
 bool run_main_loop=false;       //flag which triggers execution of one control loop cycle
-bool start_control=false;        //this flag is set when the controller should start running
 volatile uint16_t result;       //result of adc conversion
 bool closed_loop=true;
 //adc related parameters/variables
@@ -45,6 +44,7 @@ const uint16_t va_offset=6961;        //measured offset (needs to be calibrated)
 const float conv_const=VCC/(SENSITIVITY*VAOFFSET);
 //control related parameters
 const float vdc=30.0;
+float i_ref=0.0;
 struct pi_controller_32 current_controller={0.0,0.0,0.0,4.0,8.256550961220959e+02,200e-6};
 //uart related parameters
 //parameters can be calculated for f(SMCLK)=48MHz at
@@ -321,7 +321,7 @@ void PORT1_IRQHandler(void){
         //clear P1 interrupt flag (important: otherwise infinite interrupt loop)
         P1->IFG &= ~BIT1;
         //trigger a main control loop run
-        start_control=true;
+        //start_control=true;
     }
     else{
         //clear P1 interrupt flag (important: otherwise infinite interrupt loop)
@@ -413,8 +413,10 @@ int main(void)
             //------------------------------
             switch(state){
             case INIT:
-                if(start_control)
+                if(request_opmode_change){
                     nextState=CLOSED_LOOP;
+                    request_opmode_change=false;
+                }
                 else
                     nextState=INIT;
                 break;
@@ -487,7 +489,7 @@ int main(void)
 //                i_ref=1*sin(2*M_PI*50*time);
 //                counter_cl++;
             //constant current test
-                i_ref=3.0;
+                //i_ref=3.0;
             //stepping current test
 //              counter_cl=(counter_cl+1)%5000;
 //              if(counter_cl>1000)
