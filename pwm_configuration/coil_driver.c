@@ -27,7 +27,6 @@ inline void toggle_heartbeat(void){P5->OUT ^= BIT6;};
 
 #define DEBUG
 
-uint32_t res_freq=0;
 const uint16_t DUTY_MAX=1024;    //maximum value of duty
 uint16_t duty=512;               //duty cycle
 bool run_main_loop=false;       //flag which triggers execution of one control loop cycle
@@ -36,6 +35,7 @@ bool closed_loop=true;
 //adc related parameters/variables
 uint32_t adc_sum = 0;
 uint16_t no_samples = 0;
+float imeas=0.0;
 const uint16_t va_max=0x3FFF;         //maximum output of the 14bit ADC
 const uint16_t va_offset=6961;        //measured offset (needs to be calibrated) (nominal 0x1FFF=8192)
 #define VCC 3.3
@@ -69,6 +69,7 @@ const uint16_t n_shutdown=20+2;                 //number of cycles to wait befor
 uint16_t transition_counter=0;
 bool request_opmode_change=false;                //this bit is set when a change of state from CLOSED_LOOP to RESONANT is requested
 bool command_to_be_processed=false;
+bool request_debug_state=false;
 
 char input_buffer[128];
 uint8_t input_pointer=0;
@@ -122,6 +123,31 @@ void init_adc(void){
      * Hint: it may be useful to disable the ADC conversion when processing the results (e.g. unset ADC14_CTL0_ENC)
      */
     ADC14->CTL0 |= ADC14_CTL0_ON;
+}
+
+inline float retreive_meas_current(){
+    //calculate the average current signal measured
+    uint32_t adc_avg = adc_sum/no_samples;
+    int32_t adc_avg_wooff = adc_avg-va_offset;
+    imeas=-conv_const*(float)adc_avg_wooff;
+
+    //reset adc variables
+    adc_sum=0;
+    no_samples=0;
+
+    return imeas;
+}
+
+void enable_adc(){
+    ADC14->CTL0 |= ADC14_CTL0_ENC;
+    adc_sum=0;
+    no_samples=0;
+}
+
+void disable_adc(){
+    ADC14->CTL0 &= (~ADC14_CTL0_ENC);
+    adc_sum=0;
+    no_samples=0;
 }
 
 // ADC14 interrupt service routine
@@ -272,26 +298,25 @@ void init_pwm_adc(void){
     TIMER_A1->CCTL[3] = TIMER_A_CCTLN_OUTMOD_6; // CCR4 toggle mode for PWM generation
 }
 
-//set the pwm frequency to the one used in cl mode
-
-inline void set_pwm_freq_cl(void){
-    //formula for PWM: f_pwm=f_0/CCR[0], f_0 at the moment is 12.8MHz
-    TIMER_A1->CCR[0]=DUTY_MAX;
-    //set normal duty cycle
-    TIMER_A1->CCR[1]=DUTY_MAX/2;
-    //set inverted duty cycle
-    TIMER_A1->CCR[3] =DUTY_MAX/2;
-}
 
 inline void set_duty(uint16_t duty){
     uint16_t counter_duty=(TIMER_A1->CCR[0]*duty)/1024;
     TIMER_A1->CCR[1]=counter_duty;        //counter toggles at CCR[1]
     //set inverted duty cycle as well
     TIMER_A1->CCR[3] =counter_duty;
+    /*  configure CCR TA1.2 (adc trigger register)
+        TA1.2 will serve as the adc trigger. TA1.2 will have a positive edge (and trigger the adc) when
+        the counter value reaches CCR[2]. In order to sample in between PWM switch events, we need to place CCR[2]
+        as far away from an edge of CCR[1] as possible.
+     * */
+    if(TIMER_A1->CCR[1] > (DUTY_MAX/2))
+        TIMER_A1->CCR[2] = (TIMER_A1->CCR[1])/2;
+    else
+        TIMER_A1->CCR[2] = (DUTY_MAX/2)+(TIMER_A1->CCR[1])/2;
 }
 
 //set the pwm frequency to the one used in res mode
-inline void set_pwm_freq_res(int freq){
+inline void set_pwm_freq(int freq){
     //formula for PWM: f_pwm=f_0/CCR[0]*2, f_0 at the moment is 12.8MHz
     uint16_t counter_limit=12000000/freq*2;
     //we set CCR[0]:=800, therefore the output frequency is 30kHz
@@ -300,6 +325,8 @@ inline void set_pwm_freq_res(int freq){
     TIMER_A1->CCR[1]=counter_limit/2;        //counter toggles at CCR[1]
     //set inverted duty cycle to 50% as well
     TIMER_A1->CCR[3] =counter_limit/2;
+    //set CCR[2] which is needed to trigger the ADC
+    TIMER_A1->CCR[2] =counter_limit/4;
 }
 
 void fatal_error(void){
@@ -394,17 +421,6 @@ int main(void)
     init_uart();
     init_gpio();
 
-    //main control loop
-    uint32_t counter_cl=0;
-    float i_ref=0.2;
-
-    #ifdef DEBUG
-    uint32_t maxi=0;
-    uint16_t max_nosamples=0;
-    uint32_t amax=0;
-    float imax=0.0;
-    #endif
-
     while(1){
         if(run_main_loop){
             state=nextState;
@@ -415,7 +431,12 @@ int main(void)
             case INIT:
                 if(request_opmode_change){
                     nextState=CLOSED_LOOP;
+                    enable_adc();
                     request_opmode_change=false;
+                }
+                else if(request_debug_state){
+                    nextState=DEBUGSTATE;
+                    enable_adc();
                 }
                 else
                     nextState=INIT;
@@ -436,6 +457,8 @@ int main(void)
                 }
                 else{
                     transition_counter=0;
+                    disable_adc();
+                    set_pwm_freq(res_freq);
                     nextState=RESONANT;
                 }
                 break;
@@ -446,6 +469,8 @@ int main(void)
                 }
                 else{
                     transition_counter=0;
+                    enable_adc();
+                    set_pwm_freq(cl_pwm_freq);
                     nextState=CLOSED_LOOP;
                 }
                 break;
@@ -458,6 +483,18 @@ int main(void)
                     nextState=RESONANT;
                 }
                 break;
+            case DEBUGSTATE:
+                if(request_opmode_change){
+                    nextState=CLOSED_LOOP;
+                    request_opmode_change=false;
+                }
+                else if(!request_debug_state){
+                    disable_adc();
+                    nextState=INIT;
+                }
+                else
+                    nextState=DEBUGSTATE;
+                break;
             }
 
             //------------------------------
@@ -469,7 +506,7 @@ int main(void)
             }
 
             //------------------------------
-            //set the outputs
+            //set the outputs / process measurements
             //------------------------------
             if(state==INIT){
                 ////////////
@@ -478,6 +515,9 @@ int main(void)
                 toggle_heartbeat();         //toggle the heartbeat
                 set_disable();            //set the disable bit to low
                 unset_ssrdisable();          //unset ssrenable
+            }
+            else if(state==DEBUGSTATE){
+                imeas=retreive_meas_current();
             }
             else if(state==CLOSED_LOOP){
                 ////////////
@@ -503,32 +543,19 @@ int main(void)
             //if we do not have enough samples, skip control cycle
                 if(no_samples<8)
                     continue;
-            //calculate the average current signal measured
-                uint32_t adc_avg = adc_sum/no_samples;
-                int32_t adc_avg_wooff = adc_avg-va_offset;
-                float i_meas=-conv_const*(float)adc_avg_wooff;
-                #ifdef DEBUG
-                if(i_meas>imax){
-                    imax=i_meas;
-                    amax=adc_sum;
-                    maxi=counter_cl;
-                    max_nosamples=no_samples;
-                }
-                #endif
-            //reset adc variables
-                adc_sum=0;
-                no_samples=0;
+            //calculate the measured current based on currently available samples from the ADC
+                imeas=retreive_meas_current();
 
                 ////////////
                 //calculate and execute control law
                 ////////////
-                float err=i_ref-i_meas;
+                float err=i_ref-imeas;
                 float u_norm=current_controller.kp/vdc*err;
             //set the duty cycle
                 if(u_norm>1.0)
                     duty=0;
                 else if(u_norm<-1.0)
-                    duty=255;
+                    duty=DUTY_MAX;
                 else
                     duty=DUTY_MAX/2-(u_norm)*(DUTY_MAX/2);
 
@@ -555,7 +582,6 @@ int main(void)
                 toggle_heartbeat();     //toggle the heartbeat
                 set_disable();          //set the disable bit to high, disabling all MOSFETs
                 unset_ssrdisable();        //enable ssr to bypass the cap
-                set_pwm_freq_res(res_freq);     //set the PWM frequency to the resonant frequency (50% duty)
             }
             else if(state==RES_TO_CL){
                 ////////////
@@ -564,7 +590,6 @@ int main(void)
                 toggle_heartbeat();         //toggle the heartbeat
                 set_disable();              //set the disable bit to high, disabling all MOSFETs
                 set_ssrdisable();          //keep ssr open such that oscillation continues
-                set_pwm_freq_cl();          //set the PWM frequency to the closed-loop frequency (50% duty)
             }
 
             run_main_loop=false;
