@@ -141,7 +141,7 @@ void disable_adc(){
 // ADC14 interrupt service routine
 void ADC14_IRQHandler(void) {
     //exponential average filtering
-    adc_running_avg=(adc_running_avg>>1)+(ADC14->MEM[0]>>1);
+    adc_running_avg=7*(adc_running_avg>>3)+(ADC14->MEM[0]>>3);
 }
 
 void init_clk(void){

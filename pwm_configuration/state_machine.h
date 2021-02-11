@@ -15,7 +15,7 @@ enum system_state{INIT,CLOSED_LOOP,CL_TO_RES,RES_TO_CL,RESONANT,DEBUGSTATE};
 
 extern char input_buffer[];
 const uint32_t res_freq=100000;
-const uint32_t cl_pwm_freq=65000;
+const uint32_t cl_pwm_freq=100000;
 extern uint16_t duty;
 extern float i_ref;
 extern bool request_opmode_change;
