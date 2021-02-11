@@ -33,8 +33,7 @@ bool run_main_loop=false;       //flag which triggers execution of one control l
 volatile uint16_t result;       //result of adc conversion
 bool closed_loop=true;
 //adc related parameters/variables
-uint32_t adc_sum = 0;
-uint16_t no_samples = 0;
+uint16_t adc_running_avg=0;
 float imeas=0.0;
 const uint16_t va_max=0x3FFF;         //maximum output of the 14bit ADC
 const uint16_t va_offset=6961;        //measured offset (needs to be calibrated) (nominal 0x1FFF=8192)
@@ -126,35 +125,23 @@ void init_adc(void){
 }
 
 inline float retreive_meas_current(){
-    //calculate the average current signal measured
-    uint32_t adc_avg = adc_sum/no_samples;
-    int32_t adc_avg_wooff = adc_avg-va_offset;
-    imeas=-conv_const*(float)adc_avg_wooff;
-
-    //reset adc variables
-    adc_sum=0;
-    no_samples=0;
-
+    //convert the adc_running_avg to a current in A
+    imeas=-conv_const*(float)adc_running_avg;
     return imeas;
 }
 
 void enable_adc(){
     ADC14->CTL0 |= ADC14_CTL0_ENC;
-    adc_sum=0;
-    no_samples=0;
 }
 
 void disable_adc(){
     ADC14->CTL0 &= (~ADC14_CTL0_ENC);
-    adc_sum=0;
-    no_samples=0;
 }
 
 // ADC14 interrupt service routine
 void ADC14_IRQHandler(void) {
-    //add the measured current to the running sum. read access to MEM[0] will also clear the associated interrupt flag
-    adc_sum += ADC14->MEM[0];
-    no_samples++;
+    //exponential average filtering
+    adc_running_avg=(adc_running_avg>>1)+(ADC14->MEM[0]>>1);
 }
 
 void init_clk(void){
@@ -540,9 +527,6 @@ int main(void)
                 ////////////
                 //compute the measured current
                 ////////////
-            //if we do not have enough samples, skip control cycle
-                if(no_samples<8)
-                    continue;
             //calculate the measured current based on currently available samples from the ADC
                 imeas=retreive_meas_current();
 
