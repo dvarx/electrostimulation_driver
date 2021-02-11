@@ -22,6 +22,7 @@ extern bool request_opmode_change;
 extern bool start_control;
 extern enum system_state state;
 extern bool request_debug_state;
+extern bool request_stop;
 
 inline void set_pwm_freq(int freq);
 extern void set_duty(uint16_t);
@@ -31,6 +32,7 @@ const char SET_DUTY_CMD[]="!dut";
 const char SWITCH_STATE[]="!sws";
 const char SET_CURRENT[]="!cur";
 const char DEBUG[]="!dbg";
+const char STOP[]="!stp";
 
 void parse_input(uint8_t buffer_size){
     //!frq command
@@ -49,9 +51,11 @@ void parse_input(uint8_t buffer_size){
         duty=(uint32_t)atoi(input_buffer+sizeof(SET_FREQ_CMD)/sizeof(char)-1);
         set_duty(duty);
     }
+    //!sws command
     else if(!strncmp(input_buffer,SWITCH_STATE,sizeof(SWITCH_STATE)/sizeof(char)-1)){
         request_opmode_change=true;
     }
+    //!cur command
     else if(!strncmp(input_buffer,SET_CURRENT,sizeof(SET_CURRENT)/sizeof(char)-1)){
         i_ref=atoi(input_buffer+sizeof(SET_CURRENT)/sizeof(char)-1)*0.001;;
     }
@@ -61,6 +65,10 @@ void parse_input(uint8_t buffer_size){
             request_debug_state=true;
         if(state==DEBUGSTATE)
             request_debug_state=false;
+    }
+    //!stp command
+    else if(!strncmp(input_buffer,STOP,sizeof(STOP)/sizeof(char)-1)){
+        request_stop=true;
     }
 }
 

@@ -27,20 +27,15 @@ inline void toggle_heartbeat(void){P5->OUT ^= BIT6;};
 
 #define DEBUG
 
-const uint16_t DUTY_MAX=1024;    //maximum value of duty
 uint16_t duty=512;               //duty cycle
 bool run_main_loop=false;       //flag which triggers execution of one control loop cycle
 volatile uint16_t result;       //result of adc conversion
 bool closed_loop=true;
 //adc related parameters/variables
-uint16_t adc_running_avg=0;
+int32_t adc_running_avg=0;
 float imeas=0.0;
-const uint16_t va_max=0x3FFF;         //maximum output of the 14bit ADC
-const uint16_t va_offset=6961;        //measured offset (needs to be calibrated) (nominal 0x1FFF=8192)
-#define VCC 3.3
-#define SENSITIVITY 0.286
-#define VAOFFSET 8192.0
-const float conv_const=VCC/(SENSITIVITY*VAOFFSET);
+const int32_t va_offset=7993;        //measured offset (needs to be calibrated) (nominal 0x1FFF=8192)
+const float conv_const=7.86782061369000e-4;
 //control related parameters
 const float vdc=30.0;
 float i_ref=0.0;
@@ -69,6 +64,7 @@ uint16_t transition_counter=0;
 bool request_opmode_change=false;                //this bit is set when a change of state from CLOSED_LOOP to RESONANT is requested
 bool command_to_be_processed=false;
 bool request_debug_state=false;
+bool request_stop=false;
 
 char input_buffer[128];
 uint8_t input_pointer=0;
@@ -126,15 +122,16 @@ void init_adc(void){
 
 inline float retreive_meas_current(){
     //convert the adc_running_avg to a current in A
-    imeas=-conv_const*(float)adc_running_avg;
+    int32_t adc_running_avg_woavg=adc_running_avg-va_offset;
+    imeas=conv_const*(float)adc_running_avg_woavg;
     return imeas;
 }
 
-void enable_adc(){
+inline void enable_adc(){
     ADC14->CTL0 |= ADC14_CTL0_ENC;
 }
 
-void disable_adc(){
+inline void disable_adc(){
     ADC14->CTL0 &= (~ADC14_CTL0_ENC);
 }
 
@@ -266,7 +263,7 @@ void init_pwm_adc(void){
     TIMER_A1->EX0 = TIMER_A_EX0_TAIDEX_0;   // Clk /1
     //configure CCR TA1.0 (ceiling register)
     TIMER_A1->CCTL[0] = TIMER_A_CCTLN_OUTMOD_4; // CCR4 toggle mode
-    TIMER_A1->CCR[0] = DUTY_MAX;
+    TIMER_A1->CCR[0] = 1024;
     //configure CCR TA1.1 (duty register)
     TIMER_A1->CCR[1] = duty;                     //this value corresponds to the PWM value in [0...255]
     TIMER_A1->CCTL[1] = TIMER_A_CCTLN_OUTMOD_3; // CCR4 toggle mode for PWM generation
@@ -275,17 +272,20 @@ void init_pwm_adc(void){
         the counter value reaches CCR[2]. In order to sample in between PWM switch events, we need to place CCR[2]
         as far away from an edge of CCR[1] as possible.
      * */
-    if(TIMER_A1->CCR[1] > (DUTY_MAX/2))
+    if(TIMER_A1->CCR[1] > (1024/2))
         TIMER_A1->CCR[2] = (TIMER_A1->CCR[1])/2;
     else
-        TIMER_A1->CCR[2] = (DUTY_MAX/2)+(TIMER_A1->CCR[1])/2;
+        TIMER_A1->CCR[2] = (1024/2)+(TIMER_A1->CCR[1])/2;
     TIMER_A1->CCTL[2] = TIMER_A_CCTLN_OUTMOD_3; // CCR4 toggle mode for ADC triggering
     //configure CCR TA1.3 as the inverse duty cycle
     TIMER_A1->CCR[3] = duty;                     //this value corresponds to the PWM value in [0...255]
     TIMER_A1->CCTL[3] = TIMER_A_CCTLN_OUTMOD_6; // CCR4 toggle mode for PWM generation
+
+    enable_adc();
 }
 
 
+//set the duty cycle (10bit)
 inline void set_duty(uint16_t duty){
     uint16_t counter_duty=(TIMER_A1->CCR[0]*duty)/1024;
     TIMER_A1->CCR[1]=counter_duty;        //counter toggles at CCR[1]
@@ -296,10 +296,10 @@ inline void set_duty(uint16_t duty){
         the counter value reaches CCR[2]. In order to sample in between PWM switch events, we need to place CCR[2]
         as far away from an edge of CCR[1] as possible.
      * */
-    if(TIMER_A1->CCR[1] > (DUTY_MAX/2))
+    if(TIMER_A1->CCR[1] > (TIMER_A1->CCR[1]/2))
         TIMER_A1->CCR[2] = (TIMER_A1->CCR[1])/2;
     else
-        TIMER_A1->CCR[2] = (DUTY_MAX/2)+(TIMER_A1->CCR[1])/2;
+        TIMER_A1->CCR[2] = (TIMER_A1->CCR[1])+(TIMER_A1->CCR[1])/2;
 }
 
 //set the pwm frequency to the one used in res mode
@@ -418,18 +418,23 @@ int main(void)
             case INIT:
                 if(request_opmode_change){
                     nextState=CLOSED_LOOP;
-                    enable_adc();
+                    set_pwm_freq(cl_pwm_freq);
                     request_opmode_change=false;
                 }
                 else if(request_debug_state){
                     nextState=DEBUGSTATE;
-                    enable_adc();
+                    set_pwm_freq(cl_pwm_freq);
+                    request_debug_state=false;
                 }
                 else
                     nextState=INIT;
                 break;
             case CLOSED_LOOP:
-                if(request_opmode_change){
+                if(request_stop){
+                    nextState=INIT;
+                    request_stop=false;
+                }
+                else if(request_opmode_change){
                     nextState=CL_TO_RES;
                     request_opmode_change=false;
                 }
@@ -462,7 +467,11 @@ int main(void)
                 }
                 break;
             case RESONANT:
-                if(request_opmode_change){
+                if(request_stop){
+                    nextState=INIT;
+                    request_stop=false;
+                }
+                else if(request_opmode_change){
                     nextState=RES_TO_CL;
                     request_opmode_change=false;
                 }
@@ -471,13 +480,9 @@ int main(void)
                 }
                 break;
             case DEBUGSTATE:
-                if(request_opmode_change){
-                    nextState=CLOSED_LOOP;
-                    request_opmode_change=false;
-                }
-                else if(!request_debug_state){
-                    disable_adc();
+                if(request_stop){
                     nextState=INIT;
+                    request_stop=false;
                 }
                 else
                     nextState=DEBUGSTATE;
@@ -505,6 +510,7 @@ int main(void)
             }
             else if(state==DEBUGSTATE){
                 imeas=retreive_meas_current();
+                unset_disable();
             }
             else if(state==CLOSED_LOOP){
                 ////////////
@@ -537,16 +543,15 @@ int main(void)
                 float u_norm=current_controller.kp/vdc*err;
             //set the duty cycle
                 if(u_norm>1.0)
-                    duty=0;
+                    set_duty(0);
                 else if(u_norm<-1.0)
-                    duty=DUTY_MAX;
+                    set_duty(1024);
                 else
-                    duty=DUTY_MAX/2-(u_norm)*(DUTY_MAX/2);
+                    set_duty(512+512*u_norm);
 
                 ////////////
                 //set output signals
                 ////////////
-                set_duty(duty);
                 toggle_heartbeat();     //toggle the heartbeat
                 unset_disable();        //set the disable bit to low
                 unset_ssrdisable();        //enable ssr to bypass the cap
