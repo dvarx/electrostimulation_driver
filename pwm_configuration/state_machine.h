@@ -37,11 +37,12 @@ const char STOP[]="!stp";
 void parse_input(uint8_t buffer_size){
     //!frq command
     if(!strncmp(input_buffer,SET_FREQ_CMD,sizeof(SET_FREQ_CMD)/sizeof(char)-1)){
-        //if not in debug state, we cannot set the frequency manually
-        if(state!=DEBUGSTATE)
-            return;
-        uint32_t des_res_freq=(uint32_t)atoi(input_buffer+sizeof(SET_FREQ_CMD)/sizeof(char)-1);
-        set_pwm_freq(des_res_freq);
+        //changing the frequency manually only works in debug state or resonant state
+        if((state==DEBUGSTATE)||(state==RESONANT)){
+            uint32_t des_res_freq=(uint32_t)atoi(input_buffer+sizeof(SET_FREQ_CMD)/sizeof(char)-1);
+            set_pwm_freq(des_res_freq);
+        }
+        return;
     }
     //!dut command
     else if(!strncmp(input_buffer,SET_DUTY_CMD,sizeof(SET_DUTY_CMD)/sizeof(char)-1)){

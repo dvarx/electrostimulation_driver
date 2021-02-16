@@ -38,8 +38,9 @@ const int32_t va_offset=7993;        //measured offset (needs to be calibrated) 
 const float conv_const=7.86782061369000e-4;
 //control related parameters
 const float vdc=30.0;
+#define CONTROLLER_DT 200E-6
 float i_ref=0.0;
-struct pi_controller_32 current_controller={0.0,0.0,0.0,4.0,8.256550961220959e+02,200e-6};
+struct pi_controller_32 current_controller={0.0,0.0,0.0,8.0,0.0,CONTROLLER_DT};
 //uart related parameters
 //parameters can be calculated for f(SMCLK)=48MHz at
 //http://software-dl.ti.com/msp430/msp430_public_sw/mcu/msp430/MSP430BaudRateConverter/index.html
@@ -341,7 +342,7 @@ void PORT1_IRQHandler(void){
         //clear P1 interrupt flag (important: otherwise infinite interrupt loop)
         P1->IFG &= ~BIT4;
         //set this bit to request a change of operational mode
-        request_opmode_change=true;
+        //request_opmode_change=true;
     }
 }
 
@@ -408,6 +409,7 @@ int main(void)
     init_uart();
     init_gpio();
 
+    uint32_t counter_cl=0;
     while(1){
         if(run_main_loop){
             state=nextState;
@@ -524,11 +526,11 @@ int main(void)
             //constant current test
                 //i_ref=3.0;
             //stepping current test
-//              counter_cl=(counter_cl+1)%5000;
-//              if(counter_cl>1000)
-//                  i_ref=4.0;
+//              counter_cl=(counter_cl+1)%1000;
+//              if(counter_cl>500)
+//                  i_ref=2.0;
 //              else
-//                  i_ref=-4.0;
+//                  i_ref=-2.0;
 
                 ////////////
                 //compute the measured current
@@ -539,8 +541,8 @@ int main(void)
                 ////////////
                 //calculate and execute control law
                 ////////////
-                float err=i_ref-imeas;
-                float u_norm=current_controller.kp/vdc*err;
+                update_pi(&current_controller,i_ref-imeas);
+                float u_norm=current_controller.u/vdc;
             //set the duty cycle
                 if(u_norm>1.0)
                     set_duty(0);
