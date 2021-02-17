@@ -15,15 +15,11 @@
  * P1.1     ->  turn on switch      ->  P1.1
  * P1.4     ->  mode change request ->  P1.4
  * P2.4     ->  disable signal      ->  P2.4
- * P5.6     ->  heartbeat
- * P5.5     ->  ssr disable          ->  P5.5
+ * P5.6     ->  TA2_CCR1
  */
 
 inline void set_disable(void){P2->OUT |= BIT4;};
 inline void unset_disable(void){P2->OUT &= ~BIT4;};
-inline void set_ssrdisable(void){P5->OUT |= BIT5;};
-inline void unset_ssrdisable(void){P5->OUT &= ~BIT5;};
-inline void toggle_heartbeat(void){P5->OUT ^= BIT6;};
 
 #define DEBUG
 
@@ -33,7 +29,14 @@ volatile uint16_t result;       //result of adc conversion
 bool closed_loop=true;
 const uint16_t clk_divider_cnt=8;   //clock division factor for counter
 //adc related parameters/variables
-int32_t adc_running_avg=0;
+int32_t adc_accumulator=0;
+const int Nmeas=100;           //number of measurements in a single current average measurement
+const int Mmeas=200;           //number of averaged measurements
+unsigned int nmeas_counter=0;           //number of single current samples in the current average current measurement
+int32_t avgd_current_meass[Mmeas];         //array of current average measurements
+int32_t acc_abs_current_main=0;                //accumulator for absolute average current measurements
+int32_t avg_abs_current_main_est=0;
+uint16_t avgd_current_meass_offset=0;     //offset into the current_avg_meas array
 float imeas=0.0;
 const int32_t va_offset=7993;        //measured offset (needs to be calibrated) (nominal 0x1FFF=8192)
 const float conv_const=7.86782061369000e-4;
@@ -83,10 +86,10 @@ void init_adc(void){
      * this signal determines when the sampling phase ends*/
     ADC14->CTL0 |= ADC14_CTL0_SHP;
 
-    /* source for the sample trigger signal, we choose source #4 which corresponds to
-     * TA1_C2.
+    /* source for the sample trigger signal, we choose source #5 which corresponds to
+     * TA2_C1.
      * */
-    ADC14->CTL0 |= ADC14_CTL0_SHS_4;
+    ADC14->CTL0 |= ADC14_CTL0_SHS_5;
 
     // set the ADC mode to repeat-single-channel
     ADC14->CTL0 |= ADC14_CTL0_CONSEQ_2;
@@ -124,9 +127,9 @@ void init_adc(void){
 
 inline float retreive_meas_current(){
     //convert the adc_running_avg to a current in A
-    int32_t adc_running_avg_woavg=adc_running_avg-va_offset;
-    imeas=conv_const*(float)adc_running_avg_woavg;
-    return imeas;
+//    int32_t adc_running_avg_woavg=adc_running_avg-va_offset;
+//    imeas=conv_const*(float)adc_running_avg_woavg;
+//    return imeas;
 }
 
 inline void enable_adc(){
@@ -139,8 +142,22 @@ inline void disable_adc(){
 
 // ADC14 interrupt service routine
 void ADC14_IRQHandler(void) {
-    //exponential average filtering
-    adc_running_avg=7*(adc_running_avg>>3)+(ADC14->MEM[0]>>3);
+    adc_accumulator+=ADC14->MEM[0];
+    nmeas_counter++;
+    if(nmeas_counter>=Nmeas){
+        int32_t new_avgd_current_meas=adc_accumulator/Nmeas;
+        //update the main current estimate for average absolute current
+        int32_t increment=new_avgd_current_meas-avgd_current_meass[avgd_current_meass_offset];
+        acc_abs_current_main+=increment;
+        avg_abs_current_main_est=acc_abs_current_main/Mmeas;
+        //save the newest avgd_current_meas and discard the oldest avgd_current_meas
+        avgd_current_meass[avgd_current_meass_offset]=new_avgd_current_meas;
+        adc_accumulator=0;
+        //update the offset pointer
+        avgd_current_meass_offset=(avgd_current_meass_offset+1)%Mmeas;
+        //reset the counter
+        nmeas_counter=0;
+    }
 }
 
 void init_clk(void){
@@ -201,10 +218,6 @@ void init_gpio(void){
     P7->DIR |= BIT7;                        // P7.7 output
     P7->SEL0 |= BIT7;                       // P7.7 option select
     P7->SEL1 &= (~BIT7);                    // P7.7 option select
-    //P7.6  ->  TA1.2 (adc trigger)
-    P7->DIR |= BIT6;                        // P7.6 output
-    P7->SEL0 |= BIT6;                       // P7.6 option select
-    P7->SEL1 &= (~BIT6);                    // P7.6 option select
     //P7.5 ¬duty
     P7->SEL0 |= BIT5;
     P7->SEL1 &= (~BIT5);
@@ -226,15 +239,13 @@ void init_gpio(void){
     P1->IE |= BIT4;                         // enable interrupt of Port1.4
 
     NVIC->ISER[1] = 1 << ((PORT1_IRQn) & 31);   //enable Port1 interrupt of ARM Processor
-    //P5.6 - heartbeat
-    P5->DIR |= BIT6;
-    P5->SEL0 &=(~BIT6);
+    //P5.6 - ADC trigger
+    P5->DIR |= BIT6;        //output
+    P5->SEL0 |= BIT6;
     P5->SEL1 &=(~BIT6);
     //P1.0 - error led
     P1->DIR |= BIT0;
     P1->OUT &= (~BIT0);
-    //P5.5 - ssr enable
-    P5->DIR |= BIT5;
 }
 
 //init the timer responsible for triggering the main control loop
@@ -257,7 +268,7 @@ void init_cl_timer(void){
 
 //init the pwm and the adc for synchronized sampling
 void init_pwm_adc(void){
-    // Configure Timer_A
+    // Configure Timer_A1 (this timer is used for duty generation)
     TIMER_A1->CTL = TIMER_A_CTL_TASSEL_2 |  // SMCLK
             TIMER_A_CTL_MC_1 |              // Up Mode
             TIMER_A_CTL_CLR |               // Clear TAR
@@ -269,19 +280,36 @@ void init_pwm_adc(void){
     //configure CCR TA1.1 (duty register)
     TIMER_A1->CCR[1] = duty;                     //this value corresponds to the PWM value in [0...255]
     TIMER_A1->CCTL[1] = TIMER_A_CCTLN_OUTMOD_3; // CCR4 toggle mode for PWM generation
-    /*  configure CCR TA1.2 (adc trigger register)
-        TA1.2 will serve as the adc trigger. TA1.2 will have a positive edge (and trigger the adc) when
-        the counter value reaches CCR[2]. In order to sample in between PWM switch events, we need to place CCR[2]
-        as far away from an edge of CCR[1] as possible.
-     * */
-    if(TIMER_A1->CCR[1] > (1024/2))
-        TIMER_A1->CCR[2] = (TIMER_A1->CCR[1])/2;
-    else
-        TIMER_A1->CCR[2] = (1024/2)+(TIMER_A1->CCR[1])/2;
-    TIMER_A1->CCTL[2] = TIMER_A_CCTLN_OUTMOD_3; // CCR4 toggle mode for ADC triggering
     //configure CCR TA1.3 as the inverse duty cycle
     TIMER_A1->CCR[3] = duty;                     //this value corresponds to the PWM value in [0...255]
     TIMER_A1->CCTL[3] = TIMER_A_CCTLN_OUTMOD_6; // CCR4 toggle mode for PWM generation
+
+
+    //legacy implementation
+//    /*  configure CCR TA1.2 (adc trigger register)
+//        TA1.2 will serve as the adc trigger. TA1.2 will have a positive edge (and trigger the adc) when
+//        the counter value reaches CCR[2]. In order to sample in between PWM switch events, we need to place CCR[2]
+//        as far away from an edge of CCR[1] as possible.
+//     * */
+//    if(TIMER_A1->CCR[1] > (1024/2))
+//        TIMER_A1->CCR[2] = (TIMER_A1->CCR[1])/2;
+//    else
+//        TIMER_A1->CCR[2] = (1024/2)+(TIMER_A1->CCR[1])/2;
+//    TIMER_A1->CCTL[2] = TIMER_A_CCTLN_OUTMOD_3; // CCR4 toggle mode for ADC triggering
+
+    //new implementation for electrostimulation setup
+    //configure Timer_A2 to generate the ADC trigger samples for sampling the current
+    TIMER_A2->CTL = TIMER_A_CTL_TASSEL_2 |  // SMCLK
+            TIMER_A_CTL_MC_1 |              // Up Mode
+            TIMER_A_CTL_CLR |               // Clear TAR
+            TIMER_A_CTL_ID_1;               // Clk /8
+    TIMER_A2->EX0 = TIMER_A_EX0_TAIDEX_0;   // Clk /1
+    //configure ceiling register
+    TIMER_A2->CCTL[0] = TIMER_A_CCTLN_OUTMOD_4; // CCR4 toggle mode
+    TIMER_A2->CCR[0]=256;
+    //configure TA2_CCR2, the output of the CCR will trigger the ADC
+    TIMER_A2->CCR[1] = 128;
+    TIMER_A2->CCTL[1] = TIMER_A_CCTLN_OUTMOD_3; // CCR4 toggle mode for generating ADC trigger
 
     enable_adc();
 }
@@ -464,13 +492,10 @@ int main(void)
                 ////////////
                 //set output signals
                 ////////////
-                toggle_heartbeat();         //toggle the heartbeat
                 set_disable();            //set the disable bit to low
-                unset_ssrdisable();          //unset ssrenable
             }
             else if(state==DEBUGSTATE){
                 imeas=retreive_meas_current();
-                unset_disable();
             }
             else if(state==OPERATIONAL){
 
