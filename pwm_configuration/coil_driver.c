@@ -29,16 +29,16 @@ volatile uint16_t result;       //result of adc conversion
 bool closed_loop=true;
 const uint16_t clk_divider_cnt=8;   //clock division factor for counter
 //adc related parameters/variables
-int32_t adc_accumulator=0;
+int32_t avg_abs_current_acc_nmeas=0;
 const int Nmeas=100;           //number of measurements in a single current average measurement
 const int Mmeas=200;           //number of averaged measurements
 unsigned int nmeas_counter=0;           //number of single current samples in the current average current measurement
-int32_t avgd_current_meass[Mmeas];         //array of current average measurements
-int32_t acc_abs_current_main=0;                //accumulator for absolute average current measurements
-int32_t avg_abs_current_main_est=0;
+int32_t avgd_abs_current_meass[Mmeas];         //array of current average measurements
+int32_t main_acc_avg_abs_current=0;                //accumulator for absolute average current measurements
+int32_t main_avg_abs_current_est=0;
 uint16_t avgd_current_meass_offset=0;     //offset into the current_avg_meas array
 float imeas=0.0;
-const int32_t va_offset=7993;        //measured offset (needs to be calibrated) (nominal 0x1FFF=8192)
+const int32_t va_offset=8192;        //measured offset (needs to be calibrated) (nominal 0x1FFF=8192)
 const float conv_const=7.86782061369000e-4;
 //control related parameters
 const float vdc=30.0;
@@ -142,17 +142,16 @@ inline void disable_adc(){
 
 // ADC14 interrupt service routine
 void ADC14_IRQHandler(void) {
-    adc_accumulator+=ADC14->MEM[0];
+    avg_abs_current_acc_nmeas+=ADC14->MEM[0];
     nmeas_counter++;
     if(nmeas_counter>=Nmeas){
-        int32_t new_avgd_current_meas=adc_accumulator/Nmeas;
-        //update the main current estimate for average absolute current
-        int32_t increment=new_avgd_current_meas-avgd_current_meass[avgd_current_meass_offset];
-        acc_abs_current_main+=increment;
-        avg_abs_current_main_est=acc_abs_current_main/Mmeas;
+        int32_t new_avgd_abs_current_meas=abs(avg_abs_current_acc_nmeas/Nmeas-va_offset);
+        //update the main current estimate for average absolute current (add the newest measurement, subtract the oldest measurement)
+        main_acc_avg_abs_current+=new_avgd_abs_current_meas-avgd_abs_current_meass[avgd_current_meass_offset];;
+        main_avg_abs_current_est=main_acc_avg_abs_current/Mmeas;
         //save the newest avgd_current_meas and discard the oldest avgd_current_meas
-        avgd_current_meass[avgd_current_meass_offset]=new_avgd_current_meas;
-        adc_accumulator=0;
+        avgd_abs_current_meass[avgd_current_meass_offset]=new_avgd_abs_current_meas;
+        avg_abs_current_acc_nmeas=0;
         //update the offset pointer
         avgd_current_meass_offset=(avgd_current_meass_offset+1)%Mmeas;
         //reset the counter
