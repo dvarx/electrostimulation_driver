@@ -11,7 +11,7 @@
 #include <string.h>
 #include <stdlib.h>
 
-enum system_state{INIT,CLOSED_LOOP,CL_TO_RES,RES_TO_CL,RESONANT,DEBUGSTATE};
+enum system_state{INIT,OPERATIONAL,DEBUGSTATE};
 
 extern char input_buffer[];
 const uint32_t res_freq=100000;
@@ -38,7 +38,7 @@ void parse_input(uint8_t buffer_size){
     //!frq command
     if(!strncmp(input_buffer,SET_FREQ_CMD,sizeof(SET_FREQ_CMD)/sizeof(char)-1)){
         //changing the frequency manually only works in debug state or resonant state
-        if((state==DEBUGSTATE)||(state==RESONANT)){
+        if(state==DEBUGSTATE){
             uint32_t des_res_freq=(uint32_t)atoi(input_buffer+sizeof(SET_FREQ_CMD)/sizeof(char)-1);
             set_pwm_freq(des_res_freq);
         }

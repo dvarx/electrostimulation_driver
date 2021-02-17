@@ -421,7 +421,7 @@ int main(void)
             switch(state){
             case INIT:
                 if(request_opmode_change){
-                    nextState=CLOSED_LOOP;
+                    nextState=OPERATIONAL;
                     set_pwm_freq(cl_pwm_freq);
                     request_opmode_change=false;
                 }
@@ -433,54 +433,10 @@ int main(void)
                 else
                     nextState=INIT;
                 break;
-            case CLOSED_LOOP:
+            case OPERATIONAL:
                 if(request_stop){
                     nextState=INIT;
                     request_stop=false;
-                }
-                else if(request_opmode_change){
-                    nextState=CL_TO_RES;
-                    request_opmode_change=false;
-                }
-                else{
-                    nextState=CLOSED_LOOP;
-                }
-                break;
-            case CL_TO_RES:
-                if(transition_counter<n_shutdown){
-                    transition_counter++;
-                    nextState=CL_TO_RES;
-                }
-                else{
-                    transition_counter=0;
-                    disable_adc();
-                    set_pwm_freq(res_freq);
-                    nextState=RESONANT;
-                }
-                break;
-            case RES_TO_CL:
-                if(transition_counter<n_shutdown){
-                    transition_counter++;
-                    nextState=RES_TO_CL;
-                }
-                else{
-                    transition_counter=0;
-                    enable_adc();
-                    set_pwm_freq(cl_pwm_freq);
-                    nextState=CLOSED_LOOP;
-                }
-                break;
-            case RESONANT:
-                if(request_stop){
-                    nextState=INIT;
-                    request_stop=false;
-                }
-                else if(request_opmode_change){
-                    nextState=RES_TO_CL;
-                    request_opmode_change=false;
-                }
-                else{
-                    nextState=RESONANT;
                 }
                 break;
             case DEBUGSTATE:
@@ -516,73 +472,8 @@ int main(void)
                 imeas=retreive_meas_current();
                 unset_disable();
             }
-            else if(state==CLOSED_LOOP){
-                ////////////
-                //calculation of reference current
-                ////////////
-            //sinusoidal test current
-//                float control_loop_dT=1.0/5000.0;
-//                float time=counter_cl*control_loop_dT;
-//                i_ref=1*sin(2*M_PI*50*time);
-//                counter_cl++;
-            //constant current test
-                //i_ref=3.0;
-            //stepping current test
-//              counter_cl=(counter_cl+1)%1000;
-//              if(counter_cl>500)
-//                  i_ref=2.0;
-//              else
-//                  i_ref=-2.0;
+            else if(state==OPERATIONAL){
 
-                ////////////
-                //compute the measured current
-                ////////////
-            //calculate the measured current based on currently available samples from the ADC
-                imeas=retreive_meas_current();
-
-                ////////////
-                //calculate and execute control law
-                ////////////
-                update_pi(&current_controller,i_ref-imeas);
-                float u_norm=current_controller.u/vdc;
-            //set the duty cycle
-                if(u_norm>1.0)
-                    set_duty(0);
-                else if(u_norm<-1.0)
-                    set_duty(1024);
-                else
-                    set_duty(512+512*u_norm);
-
-                ////////////
-                //set output signals
-                ////////////
-                toggle_heartbeat();     //toggle the heartbeat
-                unset_disable();        //set the disable bit to low
-                unset_ssrdisable();        //enable ssr to bypass the cap
-            } //end closed loop
-            else if(state==RESONANT){ //open loop resonant actuation
-                ////////////
-                //set output signals
-                ////////////
-                toggle_heartbeat();         //toggle the heartbeat
-                unset_disable();            //set the disable bit to low
-                set_ssrdisable();          //unset ssrenable
-            } //end open loop resonant actuation
-            else if(state==CL_TO_RES){
-                ////////////
-                //set output signals
-                ////////////
-                toggle_heartbeat();     //toggle the heartbeat
-                set_disable();          //set the disable bit to high, disabling all MOSFETs
-                unset_ssrdisable();        //enable ssr to bypass the cap
-            }
-            else if(state==RES_TO_CL){
-                ////////////
-                //set output signals
-                ////////////
-                toggle_heartbeat();         //toggle the heartbeat
-                set_disable();              //set the disable bit to high, disabling all MOSFETs
-                set_ssrdisable();          //keep ssr open such that oscillation continues
             }
 
             run_main_loop=false;
