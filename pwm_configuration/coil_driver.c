@@ -31,6 +31,7 @@ uint16_t duty=512;               //duty cycle
 bool run_main_loop=false;       //flag which triggers execution of one control loop cycle
 volatile uint16_t result;       //result of adc conversion
 bool closed_loop=true;
+const uint16_t clk_divider_cnt=8;   //clock division factor for counter
 //adc related parameters/variables
 int32_t adc_running_avg=0;
 float imeas=0.0;
@@ -260,7 +261,7 @@ void init_pwm_adc(void){
     TIMER_A1->CTL = TIMER_A_CTL_TASSEL_2 |  // SMCLK
             TIMER_A_CTL_MC_1 |              // Up Mode
             TIMER_A_CTL_CLR |               // Clear TAR
-            TIMER_A_CTL_ID_1;               // Clk /2
+            TIMER_A_CTL_ID_3;               // Clk /8
     TIMER_A1->EX0 = TIMER_A_EX0_TAIDEX_0;   // Clk /1
     //configure CCR TA1.0 (ceiling register)
     TIMER_A1->CCTL[0] = TIMER_A_CCTLN_OUTMOD_4; // CCR4 toggle mode
@@ -304,9 +305,10 @@ inline void set_duty(uint16_t duty){
 }
 
 //set the pwm frequency to the one used in res mode
+//frequency in mHz
 inline void set_pwm_freq(int freq){
     //formula for PWM: f_pwm=f_0/CCR[0]*2, f_0 at the moment is 12.8MHz
-    uint16_t counter_limit=12000000/freq*2;
+    uint16_t counter_limit=12000000000/clk_divider_cnt/freq*4;
     //we set CCR[0]:=800, therefore the output frequency is 30kHz
     TIMER_A1->CCR[0]=counter_limit;        //counter counts to CCR[0]
     //set duty cycle to 50%
