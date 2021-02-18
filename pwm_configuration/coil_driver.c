@@ -31,10 +31,12 @@ bool closed_loop=true;
 const uint16_t clk_divider_cnt=8;   //clock division factor for counter
 //adc related parameters/variables
 int32_t avg_abs_current_acc_nmeas=0;
-const int Nmeas=100;           //number of measurements in a single current average measurement
-const int Mmeas=200;           //number of averaged measurements
+const int Nmeas=1000;           //number of measurements in a single current average measurement
+const int Mmeas=20;           //number of averaged measurements
 unsigned int nmeas_counter=0;           //number of single current samples in the current average current measurement
 int32_t avgd_abs_current_meass[Mmeas];         //array of current average measurements
+int32_t last_current_meass[Nmeas];              //last adc current measurements for debugging
+int32_t last_current_meass_offset=0;            //offset into last_current_meass_offset
 int32_t main_acc_avg_abs_current=0;                //accumulator for absolute average current measurements
 int32_t main_avg_abs_current_est=0;
 uint16_t avgd_current_meass_offset=0;     //offset into the current_avg_meas array
@@ -143,13 +145,17 @@ inline void disable_adc(){
 
 // ADC14 interrupt service routine
 void ADC14_IRQHandler(void) {
-    avg_abs_current_acc_nmeas+=ADC14->MEM[0];
+    //-- log some adc acquisitions for debugging
+    last_current_meass[last_current_meass_offset]=ADC14->MEM[0];
+    last_current_meass_offset=(last_current_meass_offset+1)%Nmeas;
+    //--
+    avg_abs_current_acc_nmeas+=abs(ADC14->MEM[0]-va_offset);
     nmeas_counter++;
     toggle_debugging();
     if(nmeas_counter>=Nmeas){
-        int32_t new_avgd_abs_current_meas=abs(avg_abs_current_acc_nmeas/Nmeas-va_offset);
+        int32_t new_avgd_abs_current_meas=abs(avg_abs_current_acc_nmeas/Nmeas);
         //update the main current estimate for average absolute current (add the newest measurement, subtract the oldest measurement)
-        main_acc_avg_abs_current+=new_avgd_abs_current_meas-avgd_abs_current_meass[avgd_current_meass_offset];;
+        main_acc_avg_abs_current+=new_avgd_abs_current_meas-avgd_abs_current_meass[avgd_current_meass_offset];
         main_avg_abs_current_est=main_acc_avg_abs_current/Mmeas;
         //save the newest avgd_current_meas and discard the oldest avgd_current_meas
         avgd_abs_current_meass[avgd_current_meass_offset]=new_avgd_abs_current_meas;
