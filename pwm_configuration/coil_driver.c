@@ -8,8 +8,8 @@
 /*
  * Peripherals Overview
  * TA1.1    ->  duty                ->  P7.7
- * TA1.2    ->  adc trigger         ->  P7.6
  * TA1.3    ->  ¬duty               ->  P7.5    ! Make sure duty and ¬duty are connected in the right order, otherwise current controller unstable
+ * P5-7     ->  ADC Heartbeat
  * TA0.0    ->  main cl interrupt
  * ADC Input                        ->  P4.0
  * P1.1     ->  turn on switch      ->  P1.1
@@ -20,6 +20,7 @@
 
 inline void set_disable(void){P2->OUT |= BIT4;};
 inline void unset_disable(void){P2->OUT &= ~BIT4;};
+inline void toggle_debugging(void){P5->OUT ^= BIT7;};
 
 #define DEBUG
 
@@ -30,13 +31,13 @@ bool closed_loop=true;
 const uint16_t clk_divider_cnt=8;   //clock division factor for counter
 //adc related parameters/variables
 int32_t avg_abs_current_acc_nmeas=0;
-const int Nmeas=100;           //number of measurements in a single current average measurement
+const int Nmeas=200;           //number of measurements in a single current average measurement
 const int Mmeas=200;           //number of averaged measurements
 unsigned int nmeas_counter=0;           //number of single current samples in the current average current measurement
-int32_t avgd_abs_current_meass[Mmeas];         //array of current average measurements
-int32_t main_acc_avg_abs_current=0;                //accumulator for absolute average current measurements
-int32_t main_avg_abs_current_est=0;
-uint16_t avgd_current_meass_offset=0;     //offset into the current_avg_meas array
+int32_t max_abs_current_meass[Mmeas];   //array of the last Mmeas maximum absolute current measurements
+uint16_t max_abs_current_meass_offset=0;    //offset into array max_abs_current_meass
+int local_current_max=0;
+float exp_filter_constant=0.1;
 float imeas=0.0;
 const int32_t va_offset=8192;        //measured offset (needs to be calibrated) (nominal 0x1FFF=8192)
 const float conv_const=7.86782061369000e-4;
@@ -142,20 +143,20 @@ inline void disable_adc(){
 
 // ADC14 interrupt service routine
 void ADC14_IRQHandler(void) {
-    avg_abs_current_acc_nmeas+=ADC14->MEM[0];
+    toggle_debugging();
+    //calculate the newest absolute current measurement
+    int new_abs_current_meas=abs(ADC14->MEM[0]-va_offset);
+    if(new_abs_current_meas>local_current_max)
+        local_current_max=new_abs_current_meas;
     nmeas_counter++;
     if(nmeas_counter>=Nmeas){
-        int32_t new_avgd_abs_current_meas=abs(avg_abs_current_acc_nmeas/Nmeas-va_offset);
-        //update the main current estimate for average absolute current (add the newest measurement, subtract the oldest measurement)
-        main_acc_avg_abs_current+=new_avgd_abs_current_meas-avgd_abs_current_meass[avgd_current_meass_offset];;
-        main_avg_abs_current_est=main_acc_avg_abs_current/Mmeas;
-        //save the newest avgd_current_meas and discard the oldest avgd_current_meas
-        avgd_abs_current_meass[avgd_current_meass_offset]=new_avgd_abs_current_meas;
-        avg_abs_current_acc_nmeas=0;
-        //update the offset pointer
-        avgd_current_meass_offset=(avgd_current_meass_offset+1)%Mmeas;
+        max_abs_current_meass[max_abs_current_meass_offset]=local_current_max;
+        //update the exponential current estimator
+        imeas=(1-exp_filter_constant)*imeas+exp_filter_constant*local_current_max;
         //reset the counter
+        max_abs_current_meass_offset=(max_abs_current_meass_offset+1)%200;
         nmeas_counter=0;
+        local_current_max=0;
     }
 }
 
@@ -222,6 +223,10 @@ void init_gpio(void){
     P7->SEL1 &= (~BIT5);
     P7->DIR |= BIT5;
     //interrupt from buttons
+
+    //P5.7 as debugging output
+    P5->DIR |= BIT7;
+
 
 
     P1->DIR &= (~BIT1);                     // P1.1 input (pull down switch)
