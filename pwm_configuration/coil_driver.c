@@ -20,6 +20,7 @@
 
 inline void set_disable(void){P2->OUT |= BIT4;};
 inline void unset_disable(void){P2->OUT &= ~BIT4;};
+inline void toggle_debugging(void){P5->OUT ^= BIT7;};
 
 #define DEBUG
 
@@ -144,6 +145,7 @@ inline void disable_adc(){
 void ADC14_IRQHandler(void) {
     avg_abs_current_acc_nmeas+=ADC14->MEM[0];
     nmeas_counter++;
+    toggle_debugging();
     if(nmeas_counter>=Nmeas){
         int32_t new_avgd_abs_current_meas=abs(avg_abs_current_acc_nmeas/Nmeas-va_offset);
         //update the main current estimate for average absolute current (add the newest measurement, subtract the oldest measurement)
@@ -222,6 +224,9 @@ void init_gpio(void){
     P7->SEL1 &= (~BIT5);
     P7->DIR |= BIT5;
     //interrupt from buttons
+
+    //P5.7 as debugging output
+        P5->DIR |= BIT7;
 
 
     P1->DIR &= (~BIT1);                     // P1.1 input (pull down switch)
@@ -497,7 +502,6 @@ int main(void)
                 imeas=retreive_meas_current();
             }
             else if(state==OPERATIONAL){
-
             }
 
             run_main_loop=false;
