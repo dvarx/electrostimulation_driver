@@ -4,6 +4,7 @@
 #include <ti/devices/msp432p4xx/driverlib/driverlib.h>
 #include "state_machine.h"
 #include <math.h>
+#include "libs/hd44780.h"
 
 /*
  * Peripherals Overview
@@ -11,11 +12,14 @@
  * TA1.2    ->  adc trigger         ->  P7.6
  * TA1.3    ->  ¬duty               ->  P7.5    ! Make sure duty and ¬duty are connected in the right order, otherwise current controller unstable
  * TA0.0    ->  main cl interrupt
- * ADC Input                        ->  P4.0
+ * ADC Input                        ->  P5.0
  * P1.1     ->  turn on switch      ->  P1.1
  * P1.4     ->  mode change request ->  P1.4
  * P2.4     ->  disable signal      ->  P2.4
  * P5.6     ->  TA2_CCR1
+ * P4.0-P4.7    ->  LCD Output
+ * P6.5         ->  LCD ENABLE
+ * P6.0         ->  LCD RS
  */
 
 inline void set_disable(void){P2->OUT |= BIT4;};
@@ -108,12 +112,12 @@ void init_adc(void){
     /* configure the ADC memory registers and pin multiplexing
      * for all ADC memory registers we choose the ADC A13 on Pin 4.0
      * */
-    P4->DIR &= (~BIT0);     // P4.0 input
-    P4->SEL0 |= BIT0;       // choose ADC Channel 13 as option for Pin 4.0
-    P4->SEL1 |= BIT0;       //
+    P5->DIR &= (~BIT0);     // P5.0 input
+    P5->SEL0 |= BIT0;       // choose ADC Channel 5 as option for Pin 5.0
+    P5->SEL1 |= BIT0;       //
     uint8_t i=0;
     for(i=0; i<32; i++){
-        ADC14->MCTL[i] |= ADC14_MCTLN_INCH_13;
+        ADC14->MCTL[i] |= ADC14_MCTLN_INCH_5;
     }
 
     /* enable the adc interrupt upon sampling completion
@@ -151,7 +155,6 @@ void ADC14_IRQHandler(void) {
     //--
     avg_abs_current_acc_nmeas+=abs(ADC14->MEM[0]-va_offset);
     nmeas_counter++;
-    toggle_debugging();
     if(nmeas_counter>=Nmeas){
         int32_t new_avgd_abs_current_meas=abs(avg_abs_current_acc_nmeas/Nmeas);
         //update the main current estimate for average absolute current (add the newest measurement, subtract the oldest measurement)
@@ -212,9 +215,9 @@ void init_clk(void){
 
 
     /* Step 4: Output MCLK to port pin to demonstrate 48MHz operation */
-    P4->DIR |= BIT3;
-    P4->SEL0 |=BIT3;                        // Output MCLK
-    P4->SEL1 &= ~(BIT3);
+//    P4->DIR |= BIT3;
+//    P4->SEL0 |=BIT3;                        // Output MCLK
+//    P4->SEL1 &= ~(BIT3);
 }
 
 void init_gpio(void){
@@ -232,7 +235,7 @@ void init_gpio(void){
     //interrupt from buttons
 
     //P5.7 as debugging output
-        P5->DIR |= BIT7;
+    P5->DIR |= BIT7;
 
 
     P1->DIR &= (~BIT1);                     // P1.1 input (pull down switch)
@@ -256,6 +259,11 @@ void init_gpio(void){
     //P1.0 - error led
     P1->DIR |= BIT0;
     P1->OUT &= (~BIT0);
+
+    //setup lcd display
+    P6->DIR |= BIT0;        //P6.0  -   RS
+    P6->DIR |= BIT5;        //P6.5  -   ENABLE
+    P4->DIR = 0xFF;        //P4.0 to P4.7  -   B0 to B7
 }
 
 //init the timer responsible for triggering the main control loop
@@ -449,7 +457,9 @@ int main(void)
     init_uart();
     init_gpio();
 
-    uint32_t counter_cl=0;
+    uint32_t counter_disp=0;
+    const uint32_t counter_disp_max=20;
+    const uint32_t counter_disp_max2=2048;
     while(1){
         if(run_main_loop){
             state=nextState;
@@ -488,11 +498,22 @@ int main(void)
             }
 
             //------------------------------
-            //parse input command
+            //parse input command & set display output
             //------------------------------
+            //process uart commands
             if(command_to_be_processed){
                 parse_input(input_pointer);
                 command_to_be_processed=false;
+            }
+            //update display
+            counter_disp++;
+            if((counter_disp%counter_disp_max)==0){
+                hd44780_timer_isr();
+                toggle_debugging();
+            }
+            if((counter_disp%counter_disp_max2)==0){
+                hd44780_clear_screen();
+                hd44780_write_string("ABC", 1, 1, NO_CR_LF );
             }
 
             //------------------------------
