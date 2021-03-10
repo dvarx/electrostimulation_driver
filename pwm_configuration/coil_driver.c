@@ -470,12 +470,12 @@ int main(void)
             case INIT:
                 if(request_opmode_change){
                     nextState=OPERATIONAL;
-                    set_pwm_freq(cl_pwm_freq);
+                    set_pwm_freq(cl_pwm_freq_mhz);
                     request_opmode_change=false;
                 }
                 else if(request_debug_state){
                     nextState=DEBUGSTATE;
-                    set_pwm_freq(cl_pwm_freq);
+                    set_pwm_freq(cl_pwm_freq_mhz);
                     request_debug_state=false;
                 }
                 else
@@ -529,8 +529,8 @@ int main(void)
                 imeas=retreive_meas_current();
             }
             else if(state==OPERATIONAL){
+                unset_disable();
             }
-
             run_main_loop=false;
 
             }
