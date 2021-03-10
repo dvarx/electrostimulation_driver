@@ -526,7 +526,7 @@ int main(void)
                 set_disable();            //set the disable bit to low
             }
             else if(state==DEBUGSTATE){
-                imeas=retreive_meas_current();
+                unset_disable();
             }
             else if(state==OPERATIONAL){
                 unset_disable();
