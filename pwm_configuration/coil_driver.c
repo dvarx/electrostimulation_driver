@@ -375,6 +375,7 @@ void fatal_error(void){
     while(1){
         //loop forever
     }
+    set_disable();
 }
 
 void PORT1_IRQHandler(void){
