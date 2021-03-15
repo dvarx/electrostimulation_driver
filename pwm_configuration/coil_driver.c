@@ -5,6 +5,7 @@
 #include "state_machine.h"
 #include <math.h>
 #include "libs/hd44780.h"
+#include "impedance_lookup.h"
 
 /*
  * Peripherals Overview
@@ -48,9 +49,10 @@ float imeas=0.0;
 const int32_t va_offset=8192;        //measured offset (needs to be calibrated) (nominal 0x1FFF=8192)
 const float conv_const=7.86782061369000e-4;
 //control related parameters
-const float vdc=30.0;
+#define V_DC 30.0
 #define CONTROLLER_DT 200E-6
-float i_ref=0.0;
+float i_ref_ampl=2.0;
+const float v_in_hat=V_DC*4.0/M_PI;
 struct pi_controller_32 current_controller={0.0,0.0,0.0,8.0,0.0,CONTROLLER_DT};
 //uart related parameters
 //parameters can be calculated for f(SMCLK)=48MHz at
@@ -352,7 +354,7 @@ inline void set_duty(uint16_t duty){
 
 //set the pwm frequency to the one used in res mode
 //frequency in mHz
-inline void set_pwm_freq(int freq){
+inline void set_pwm_freq(unsigned int freq){
     //formula for PWM: f_pwm=f_0/CCR[0]*2, f_0 at the moment is 12.8MHz
     uint16_t counter_limit=12000000000/clk_divider_cnt/freq*4;
     //we set CCR[0]:=800, therefore the output frequency is 30kHz
@@ -530,6 +532,19 @@ int main(void)
             }
             else if(state==OPERATIONAL){
                 unset_disable();
+                //calculate the frequency for desired current amplitude i_ref_ampl
+                //first calculate the necessary impedance
+                float des_imp=v_in_hat/i_ref_ampl;
+                float des_freq=inverse_impedance(des_imp);
+                //check if there was an error calculating the des_freq
+                if(des_freq<340.0){
+                    set_pwm_freq(1000000);
+                    fatal_error();
+                    while(true){
+
+                    }
+                }
+                set_pwm_freq((unsigned int)1000.0*des_freq);
             }
             run_main_loop=false;
 

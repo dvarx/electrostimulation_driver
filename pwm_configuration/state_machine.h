@@ -17,14 +17,14 @@ extern char input_buffer[];
 const uint32_t res_freq_mhz=1000000;
 const uint32_t cl_pwm_freq_mhz=1000000;
 extern uint16_t duty;
-extern float i_ref;
+extern float i_ref_ampl;
 extern bool request_opmode_change;
 extern bool start_control;
 extern enum system_state state;
 extern bool request_debug_state;
 extern bool request_stop;
 
-inline void set_pwm_freq(int freq);
+inline void set_pwm_freq(unsigned int freq);
 extern void set_duty(uint16_t);
 
 const char SET_FREQ_CMD[]="!frq";
@@ -58,7 +58,7 @@ void parse_input(uint8_t buffer_size){
     }
     //!cur command
     else if(!strncmp(input_buffer,SET_CURRENT,sizeof(SET_CURRENT)/sizeof(char)-1)){
-        i_ref=atoi(input_buffer+sizeof(SET_CURRENT)/sizeof(char)-1)*0.001;;
+        i_ref_ampl=atoi(input_buffer+sizeof(SET_CURRENT)/sizeof(char)-1)*0.001;;
     }
     //!dbg command
     else if(!strncmp(input_buffer,DEBUG,sizeof(DEBUG)/sizeof(char)-1)){
