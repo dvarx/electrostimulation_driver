@@ -6,6 +6,7 @@
 #include <math.h>
 #include "libs/hd44780.h"
 #include "impedance_lookup.h"
+#include "stdio.h"
 
 /*
  * Peripherals Overview
@@ -57,6 +58,8 @@ struct pi_controller_32 current_controller={0.0,0.0,0.0,8.0,0.0,CONTROLLER_DT};
 float res_kp=5.0;
 float res_ki=1.0;
 float err_i_hat_integral=0.0;   //integral of pi current controller
+float des_freq=1000.0;
+float des_imp=1000.0;
 //uart related parameters
 //parameters can be calculated for f(SMCLK)=48MHz at
 //http://software-dl.ti.com/msp430/msp430_public_sw/mcu/msp430/MSP430BaudRateConverter/index.html
@@ -73,6 +76,8 @@ const eUSCI_UART_ConfigV1 uartConfig =
         EUSCI_A_UART_OVERSAMPLING_BAUDRATE_GENERATION,  // Oversampling
         EUSCI_A_UART_8_BIT_LEN                  // 8 bit data length
 };
+char input_buffer[128];
+uint8_t input_pointer=0;
 //state machine related parameters and variables
 enum system_state state=INIT;
 enum system_state nextState=INIT;
@@ -82,9 +87,9 @@ bool request_opmode_change=false;                //this bit is set when a change
 bool command_to_be_processed=false;
 bool request_debug_state=false;
 bool request_stop=false;
-
-char input_buffer[128];
-uint8_t input_pointer=0;
+//lcd related parameters
+char top_buffer[16]="";
+char bottom_buffer[16]="";
 
 void init_adc(void){
     // set the s&h time to 16 ADCCLK cycles
@@ -465,7 +470,7 @@ int main(void)
 
     uint32_t counter_disp=0;
     const uint32_t counter_disp_max=20;
-    const uint32_t counter_disp_max2=2048;
+    const uint32_t counter_disp_max2=4096;
     uint32_t counter_res_cl=0;
 
     while(1){
@@ -522,7 +527,17 @@ int main(void)
             }
             if((counter_disp%counter_disp_max2)==0){
                 hd44780_clear_screen();
-                hd44780_write_string("ABC", 1, 1, NO_CR_LF );
+
+                if(state==OPERATIONAL){
+                    sprintf(top_buffer,"Current: %05.3f",imeas_hat);
+                    sprintf(bottom_buffer,"Freq:    %05.3f",des_freq);
+
+                    hd44780_write_string(top_buffer,1,1,NO_CR_LF);
+                    hd44780_write_string(bottom_buffer,2,1,NO_CR_LF);
+                }
+                else{
+                    hd44780_write_string("Controller Ready",1,1,NO_CR_LF);
+                }
             }
 
             //------------------------------
@@ -546,8 +561,8 @@ int main(void)
                 if(counter_res_cl==0){
                     //calculate the frequency for desired current amplitude i_ref_ampl
                     //first calculate the necessary impedance
-                    float des_imp=v_in_hat/i_ref_ampl;
-                    float des_freq=inverse_impedance(des_imp);
+                    des_imp=v_in_hat/i_ref_ampl;
+                    des_freq=inverse_impedance(des_imp);
 
 
                     //run PI current controller
