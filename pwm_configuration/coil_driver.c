@@ -45,15 +45,18 @@ int32_t last_current_meass_offset=0;            //offset into last_current_meass
 int32_t main_acc_avg_abs_current=0;                //accumulator for absolute average current measurements
 int32_t main_avg_abs_current_est=0;
 uint16_t avgd_current_meass_offset=0;     //offset into the current_avg_meas array
-float imeas=0.0;
-const int32_t va_offset=8192;        //measured offset (needs to be calibrated) (nominal 0x1FFF=8192)
-const float conv_const=7.86782061369000e-4;
+float imeas_hat=0.0;                    //measured current amplitude
+const int32_t va_offset=8192;           //measured offset (needs to be calibrated) (nominal 0x1FFF=8192)
+const float conv_const=0.001359167287240;        //conversion from
 //control related parameters
 #define V_DC 30.0
 #define CONTROLLER_DT 200E-6
 float i_ref_ampl=2.0;
 const float v_in_hat=V_DC*4.0/M_PI;
 struct pi_controller_32 current_controller={0.0,0.0,0.0,8.0,0.0,CONTROLLER_DT};
+float res_kp=5.0;
+float res_ki=1.0;
+float err_i_hat_integral=0.0;   //integral of pi current controller
 //uart related parameters
 //parameters can be calculated for f(SMCLK)=48MHz at
 //http://software-dl.ti.com/msp430/msp430_public_sw/mcu/msp430/MSP430BaudRateConverter/index.html
@@ -463,6 +466,8 @@ int main(void)
     uint32_t counter_disp=0;
     const uint32_t counter_disp_max=20;
     const uint32_t counter_disp_max2=2048;
+    uint32_t counter_res_cl=0;
+
     while(1){
         if(run_main_loop){
             state=nextState;
@@ -500,6 +505,7 @@ int main(void)
                 break;
             }
 
+
             //------------------------------
             //parse input command & set display output
             //------------------------------
@@ -533,19 +539,34 @@ int main(void)
             }
             else if(state==OPERATIONAL){
                 unset_disable();
-                //calculate the frequency for desired current amplitude i_ref_ampl
-                //first calculate the necessary impedance
-                float des_imp=v_in_hat/i_ref_ampl;
-                float des_freq=inverse_impedance(des_imp);
-                //check if there was an error calculating the des_freq
-                if(des_freq<340.0){
-                    set_pwm_freq(1000000);
-                    fatal_error();
-                    while(true){
 
+                counter_res_cl=(counter_res_cl+1)%100;
+
+                //counter makes sure this loop is only executed every 100th interrupt
+                if(counter_res_cl==0){
+                    //calculate the frequency for desired current amplitude i_ref_ampl
+                    //first calculate the necessary impedance
+                    float des_imp=v_in_hat/i_ref_ampl;
+                    float des_freq=inverse_impedance(des_imp);
+
+
+                    //run PI current controller
+                    imeas_hat=main_avg_abs_current_est*conv_const;
+                    //error signal
+                    float err_i_hat=i_ref_ampl-imeas_hat;
+                    err_i_hat_integral+=err_i_hat;
+                    des_freq=des_freq-(res_kp*err_i_hat+res_ki*err_i_hat_integral);
+
+                    //check if there was an error calculating the des_freq
+                    if(des_freq<340.0){
+                        set_pwm_freq(1000000);
+                        fatal_error();
+                        while(true){
+
+                        }
                     }
+                    set_pwm_freq((unsigned int)1000.0*des_freq);
                 }
-                set_pwm_freq((unsigned int)1000.0*des_freq);
             }
             run_main_loop=false;
 
