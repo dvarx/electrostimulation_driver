@@ -58,7 +58,7 @@ void parse_input(uint8_t buffer_size){
     }
     //!cur command
     else if(!strncmp(input_buffer,SET_CURRENT,sizeof(SET_CURRENT)/sizeof(char)-1)){
-        i_ref_ampl_ma=atoi(input_buffer+sizeof(SET_CURRENT)/sizeof(char)-1)*0.001;;
+        i_ref_ampl_ma=atoi(input_buffer+sizeof(SET_CURRENT)/sizeof(char)-1);
     }
     //!dbg command
     else if(!strncmp(input_buffer,DEBUG,sizeof(DEBUG)/sizeof(char)-1)){
