@@ -390,9 +390,7 @@ void fatal_error(void){
     //set disable pin
     P2->OUT |= BIT4;
     set_disable();
-    while(1){
-        //loop forever
-    }
+    nextState=ERROR;
 }
 
 void PORT1_IRQHandler(void){
@@ -481,6 +479,8 @@ int main(void)
     const uint32_t counter_disp_max=20;
     const uint32_t counter_disp_max2=4096;
     uint32_t counter_res_cl=0;
+    bool sw_sig=true;
+    bool prev_sw_sig=true;
 
     while(1){
         if(run_main_loop){
@@ -517,6 +517,13 @@ int main(void)
                 else
                     nextState=DEBUGSTATE;
                 break;
+            case ERROR:
+                if(request_stop){
+                    //unset error led
+                    P1->OUT &= (~BIT0);
+                    nextState=INIT;
+                    request_stop=false;
+                }
             }
 
             //------------------------------
@@ -545,10 +552,11 @@ int main(void)
                 i_ref_ampl_ma=i_ref_amp_max;
             else if(i_ref_ampl_ma<0)
                 i_ref_ampl_ma=0;
-            //check if switch signal has had a rising edge (tip: everything !=1 is false in C)
-            bool sw_sig=((P3->IN&BIT5)!=0);
-            if(detect_rising_edge(sw_sig))
+            //check if switch signal sw (P3.5) has had a rising edge
+            bool sw_sig=((P3->IN&BIT5)==0);
+            if(sw_sig&(!prev_sw_sig))
                 cursor_position=(cursor_position+1)%3;
+            prev_sw_sig=sw_sig;
 
             //------------------------------
             //parse input command & set display output
@@ -600,7 +608,7 @@ int main(void)
                 if(counter_res_cl==0){
                     //calculate the frequency for desired current amplitude i_ref_ampl
                     //first calculate the necessary impedance
-                    des_imp=v_in_hat/i_ref_ampl_ma;
+                    des_imp=1e3*v_in_hat/i_ref_ampl_ma;
                     des_freq=inverse_impedance(des_imp);
 
 
@@ -615,11 +623,9 @@ int main(void)
                     if(des_freq<340.0){
                         set_pwm_freq(1000000);
                         fatal_error();
-                        while(true){
-
-                        }
                     }
-                    set_pwm_freq((unsigned int)1000.0*des_freq);
+                    else
+                        set_pwm_freq((unsigned int)1000.0*des_freq);
                 }
             }
             run_main_loop=false;

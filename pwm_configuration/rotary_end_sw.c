@@ -79,12 +79,3 @@ void run_rotary_enc_fsm(bool dt_sig,bool clk_sig,uint8_t* was_rotated){
 
     }
 }
-
-bool prev_sig=true;
-bool detect_rising_edge(bool sig){
-    bool rising_edge=false;
-    if(sig&(!prev_sig))
-        rising_edge=true;
-    prev_sig=sig;
-    return rising_edge;
-}

@@ -20,9 +20,4 @@ enum encoder_state {INITROT,CLOCKWISE_1,CLOCKWISE_2,CLOCKWISE_3,CCLOCKWISE_1,CCL
  */
 void run_rotary_enc_fsm(bool dt_sig,bool clk_sig,uint8_t* was_rotated);
 
-/*
- * Detects a falling signal edge
- */
-bool detect_rising_edge(bool);
-
 #endif /* ROTARY_ENC_SW_H_ */

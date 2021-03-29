@@ -11,7 +11,7 @@
 #include <string.h>
 #include <stdlib.h>
 
-enum system_state{INIT,OPERATIONAL,DEBUGSTATE};
+enum system_state{INIT,OPERATIONAL,DEBUGSTATE,ERROR};
 
 extern char input_buffer[];
 const uint32_t res_freq_mhz=1000000;
