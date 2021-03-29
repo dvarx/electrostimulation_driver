@@ -7,6 +7,7 @@
 #include "libs/hd44780.h"
 #include "impedance_lookup.h"
 #include "stdio.h"
+#include "rotary_enc_sw.h"
 
 /*
  * Peripherals Overview
@@ -22,6 +23,9 @@
  * P4.0-P4.7    ->  LCD Output
  * P6.5         ->  LCD ENABLE
  * P6.0         ->  LCD RS
+ * P3.5         ->  SW
+ * P3.7         ->  DT
+ * P5.2         ->  CLK
  */
 
 inline void set_disable(void){P2->OUT |= BIT4;};
@@ -90,6 +94,11 @@ bool request_stop=false;
 //lcd related parameters
 char top_buffer[16]="";
 char bottom_buffer[16]="";
+//rotary encoder / switch related parameters
+int32_t rotary_counter=0;
+uint8_t was_rotated;            //rotary encoder variable (0 if not rotated, 1 if rotated cw, 2 if rotated ccw)
+uint8_t was_pressed;            //press button variable (1 if was pressed, 0 if not)
+uint8_t cursor_position=0;        //position of the selection cursor [5.28 , first digit 0 second digit 1 third digit 2]
 
 void init_adc(void){
     // set the s&h time to 16 ADCCLK cycles
@@ -273,7 +282,12 @@ void init_gpio(void){
     //setup lcd display
     P6->DIR |= BIT0;        //P6.0  -   RS
     P6->DIR |= BIT5;        //P6.5  -   ENABLE
-    P4->DIR = 0xFF;        //P4.0 to P4.7  -   B0 to B7
+    P4->DIR = 0xFF;        //P4.0 to P4.7  -   B0 to B7$
+
+    //rotary encoder & switch
+    P3->DIR &= (~0x20);     //P3.5 input sw
+    P3->DIR &= (~0x80);     //P3.7 input dt
+    P5->DIR &= (~0x02);     //P5.2 input clk
 }
 
 //init the timer responsible for triggering the main control loop
@@ -380,10 +394,10 @@ void fatal_error(void){
     P1->OUT |= BIT0;
     //set disable pin
     P2->OUT |= BIT4;
+    set_disable();
     while(1){
         //loop forever
     }
-    set_disable();
 }
 
 void PORT1_IRQHandler(void){
@@ -510,6 +524,18 @@ int main(void)
                 break;
             }
 
+            //------------------------------
+            //check buttons and rotary switch
+            //------------------------------
+            run_rotary_enc_fsm((P3->IN)&BIT7,(P5->IN)&BIT2,&was_rotated);
+            if(was_rotated==1)
+                rotary_counter+=1;
+            else if(was_rotated==2)
+                rotary_counter+=-1;
+            //check if switch signal has had a rising edge (tip: everything !=1 is false in C)
+            bool sw_sig=((P3->IN&BIT5)!=0);
+            if(detect_rising_edge(sw_sig))
+                cursor_position=(cursor_position+1)%3;
 
             //------------------------------
             //parse input command & set display output
