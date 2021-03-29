@@ -56,7 +56,8 @@ const float conv_const=0.001359167287240;        //conversion from
 //control related parameters
 #define V_DC 30.0
 #define CONTROLLER_DT 200E-6
-float i_ref_ampl=2.0;
+uint32_t i_ref_ampl_ma=1000;                   //reference amplitude value [mA]
+const uint32_t i_ref_amp_max=5000;         //maximum current [mA]
 const float v_in_hat=V_DC*4.0/M_PI;
 struct pi_controller_32 current_controller={0.0,0.0,0.0,8.0,0.0,CONTROLLER_DT};
 float res_kp=5.0;
@@ -151,12 +152,6 @@ void init_adc(void){
     ADC14->CTL0 |= ADC14_CTL0_ON;
 }
 
-inline float retreive_meas_current(){
-    //convert the adc_running_avg to a current in A
-//    int32_t adc_running_avg_woavg=adc_running_avg-va_offset;
-//    imeas=conv_const*(float)adc_running_avg_woavg;
-//    return imeas;
-}
 
 inline void enable_adc(){
     ADC14->CTL0 |= ADC14_CTL0_ENC;
@@ -527,11 +522,29 @@ int main(void)
             //------------------------------
             //check buttons and rotary switch
             //------------------------------
+            //check the rotary switch and update reference current
             run_rotary_enc_fsm((P3->IN)&BIT7,(P5->IN)&BIT2,&was_rotated);
-            if(was_rotated==1)
-                rotary_counter+=1;
-            else if(was_rotated==2)
-                rotary_counter+=-1;
+            if(was_rotated==1){
+                if(cursor_position==0)
+                    i_ref_ampl_ma+=1000;
+                else if(cursor_position==1)
+                    i_ref_ampl_ma+=100;
+                else if(cursor_position==2)
+                    i_ref_ampl_ma+=10;
+            }
+            else if(was_rotated==2){
+                if(cursor_position==0)
+                    i_ref_ampl_ma-=1000;
+                else if(cursor_position==1)
+                    i_ref_ampl_ma-=100;
+                else if(cursor_position==2)
+                    i_ref_ampl_ma-=10;
+            }
+            //check max/min limits for reference current amplitude
+            if(i_ref_ampl_ma>i_ref_amp_max)
+                i_ref_ampl_ma=i_ref_amp_max;
+            else if(i_ref_ampl_ma<0)
+                i_ref_ampl_ma=0;
             //check if switch signal has had a rising edge (tip: everything !=1 is false in C)
             bool sw_sig=((P3->IN&BIT5)!=0);
             if(detect_rising_edge(sw_sig))
@@ -587,14 +600,14 @@ int main(void)
                 if(counter_res_cl==0){
                     //calculate the frequency for desired current amplitude i_ref_ampl
                     //first calculate the necessary impedance
-                    des_imp=v_in_hat/i_ref_ampl;
+                    des_imp=v_in_hat/i_ref_ampl_ma;
                     des_freq=inverse_impedance(des_imp);
 
 
                     //run PI current controller
                     imeas_hat=main_avg_abs_current_est*conv_const;
                     //error signal
-                    float err_i_hat=i_ref_ampl-imeas_hat;
+                    float err_i_hat=1e-3*(float)i_ref_ampl_ma-imeas_hat;
                     err_i_hat_integral+=err_i_hat;
                     des_freq=des_freq-(res_kp*err_i_hat+res_ki*err_i_hat_integral);
 

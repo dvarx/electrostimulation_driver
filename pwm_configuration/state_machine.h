@@ -17,7 +17,7 @@ extern char input_buffer[];
 const uint32_t res_freq_mhz=1000000;
 const uint32_t cl_pwm_freq_mhz=1000000;
 extern uint16_t duty;
-extern float i_ref_ampl;
+extern uint32_t i_ref_ampl_ma;
 extern bool request_opmode_change;
 extern bool start_control;
 extern enum system_state state;
@@ -58,7 +58,7 @@ void parse_input(uint8_t buffer_size){
     }
     //!cur command
     else if(!strncmp(input_buffer,SET_CURRENT,sizeof(SET_CURRENT)/sizeof(char)-1)){
-        i_ref_ampl=atoi(input_buffer+sizeof(SET_CURRENT)/sizeof(char)-1)*0.001;;
+        i_ref_ampl_ma=atoi(input_buffer+sizeof(SET_CURRENT)/sizeof(char)-1)*0.001;;
     }
     //!dbg command
     else if(!strncmp(input_buffer,DEBUG,sizeof(DEBUG)/sizeof(char)-1)){
