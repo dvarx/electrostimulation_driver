@@ -99,7 +99,7 @@ char bottom_buffer[16]="";
 int32_t rotary_counter=0;
 uint8_t was_rotated;            //rotary encoder variable (0 if not rotated, 1 if rotated cw, 2 if rotated ccw)
 uint8_t was_pressed;            //press button variable (1 if was pressed, 0 if not)
-uint8_t cursor_position=0;        //position of the selection cursor [5.28 , first digit 0 second digit 1 third digit 2]
+uint8_t cursor_position=1;        //position of the selection cursor [5.28 , first digit 0 second digit 1 third digit 2]
 
 void init_adc(void){
     // set the s&h time to 16 ADCCLK cycles
@@ -620,7 +620,7 @@ int main(void)
                     des_freq=des_freq-(res_kp*err_i_hat+res_ki*err_i_hat_integral);
 
                     //check if there was an error calculating the des_freq
-                    if(des_freq<340.0){
+                    if(des_freq<minfreq){
                         set_pwm_freq(1000000);
                         fatal_error();
                     }
