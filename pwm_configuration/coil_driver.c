@@ -93,10 +93,10 @@ bool command_to_be_processed=false;
 bool request_debug_state=false;
 bool request_stop=false;
 //lcd related parameters
-char buffer_0[16]="";
-char buffer_1[16]="";
-char buffer_2[16]="";
-char buffer_3[16]="";
+char buffer_0[20]="";
+char buffer_1[20]="";
+char buffer_2[20]="";
+char buffer_3[20]="";
 //rotary encoder / switch related parameters
 int32_t rotary_counter=0;
 uint8_t was_rotated;            //rotary encoder variable (0 if not rotated, 1 if rotated cw, 2 if rotated ccw)
@@ -582,7 +582,7 @@ int main(void)
                     sprintf(buffer_2,"Current:   %05.3f",imeas_hat);
                     sprintf(buffer_3,"Freq:      %05.3f",des_freq);
 
-                    hd44780_write_string(buffer_1,2,1,NO_CR_LF);
+                    hd44780_write_string(buffer_1,1,1,NO_CR_LF);
                     hd44780_write_string(buffer_2,2,1,NO_CR_LF);
                     hd44780_write_string(buffer_3,3,1,NO_CR_LF);
                 }

@@ -74,9 +74,9 @@
 //#define HD44780_TYPE_1x20                                // LCD has 1 line with 20 characters                                                                              #
 //#define HD44780_TYPE_2x8                                 // LCD has 2 lines with 8 characters each                                                                         #
 //#define HD44780_TYPE_2x16                                // LCD has 2 lines with 16 characters each                                                                        #
-#define HD44780_TYPE_2x20                                // LCD has 2 lines with 20 characters each                                                                        #
+//#define HD44780_TYPE_2x20                                // LCD has 2 lines with 20 characters each                                                                        #
 //#define HD44780_TYPE_4x16                                // LCD has 4 lines with 16 characters each                                                                        #
-//#define HD44780_TYPE_4x20                                  // LCD has 4 lines with 20 characters each                                                                        #
+#define HD44780_TYPE_4x20                                  // LCD has 4 lines with 20 characters each                                                                        #
 //                                                                                                                                                                           #
 // ###########################################################################################################################################################################
 
