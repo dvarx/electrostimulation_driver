@@ -7,6 +7,8 @@
 
 #include "impedance_lookup.h"
 
+#define RESONATOR_2500HZ
+
 //calculates the frequency f where Z(f)=imp
 float inverse_impedance(float imp){
     //if impedance requested is too high return -1.0
@@ -30,4 +32,10 @@ float inverse_impedance(float imp){
     return (imp-imps[lower_ind])/(imps[upper_ind]-imps[lower_ind])*(freqs[upper_ind]-freqs[lower_ind])+freqs[lower_ind];
 }
 
-#include "impedance_lookups/350hz_resonator.h"
+#ifdef RESONATOR_350HZ
+    #include "impedance_lookups/350hz_resonator.h"
+#elif defined(RESONATOR_2500HZ)
+    #include "impedance_lookups/2500hz_resonator.h"
+#else
+    #error Error : No resonator was defined
+#endif
