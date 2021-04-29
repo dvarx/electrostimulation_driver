@@ -512,8 +512,8 @@ int main(void)
     //DON_EXPERIMENT
     //Hint: Main Interrupt occurs @ 5kHz (200us)
     uint32_t on_off_counter=0;
-    //on_off_counter_lim=Ton/200us
-    uint32_t on_off_counter_lim=25000;
+    //on_off_counter_lim=Ton/168us
+    uint32_t on_off_counter_lim=29762;
     bool is_on=false;
 
     while(1){
@@ -635,6 +635,7 @@ int main(void)
             }
             else if(state==DEBUGSTATE){
                 //DON experiment
+                set_pwm_freq(2635000);
                 on_off_counter++;
                 if(on_off_counter==on_off_counter_lim){
                     is_on=!is_on;
