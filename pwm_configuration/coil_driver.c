@@ -454,12 +454,11 @@ void EUSCIA0_IRQHandler(void)
     if(status & EUSCI_A_UART_RECEIVE_INTERRUPT_FLAG)
     {
         input_buffer[input_pointer]=MAP_UART_receiveData(EUSCI_A0_BASE);
-        //check if newline character received. each command ends with a newline character
-        //we replace the newline character with a string termination character for further processing
-        if(input_buffer[input_pointer]=='\n'){
+        //check if \n or \r received, indicating an end of command
+        if(input_buffer[input_pointer]=='\n'||input_buffer[input_pointer]=='\r'){
             command_to_be_processed=true;
-            //check if there is a linefeed as well [Windows]
-            if(input_buffer[input_pointer-1]=='\r')
+            //check if there is a second \n or \r character
+            if(input_buffer[input_pointer-1]=='\r'||input_buffer[input_pointer-1]=='\n')
                 input_buffer[input_pointer-1]='\0';
             else
                 input_buffer[input_pointer]='\0';
@@ -508,7 +507,6 @@ int main(void)
     const uint32_t counter_disp_max=20;
     const uint32_t counter_disp_max2=4096;
     uint32_t counter_res_cl=0;
-    bool sw_sig=true;
     bool prev_sw_sig=true;
 
     while(1){
