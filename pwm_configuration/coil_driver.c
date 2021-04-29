@@ -64,8 +64,8 @@ struct pi_controller_32 current_controller={0.0,0.0,0.0,8.0,0.0,CONTROLLER_DT};
 float res_kp=5.0;
 float res_ki=1.0;
 float err_i_hat_integral=0.0;   //integral of pi current controller
-float des_freq=1000.0;
-float des_imp=1000.0;
+float des_freq=10000.0;
+float des_imp=10000.0;
 //uart related parameters
 //parameters can be calculated for f(SMCLK)=48MHz at
 //http://software-dl.ti.com/msp430/msp430_public_sw/mcu/msp430/MSP430BaudRateConverter/index.html

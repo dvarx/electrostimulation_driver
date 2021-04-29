@@ -15,8 +15,8 @@
 enum system_state{INIT=0,OPERATIONAL=1,DEBUGSTATE=2,ERROR=3};
 
 extern char input_buffer[];
-const uint32_t res_freq_mhz=1000000;
-const uint32_t cl_pwm_freq_mhz=1000000;
+const uint32_t res_freq_mhz=10000000;
+const uint32_t cl_pwm_freq_mhz=10000000;
 extern uint16_t duty;
 extern uint32_t i_ref_ampl_ma;
 extern bool request_opmode_change;
@@ -85,4 +85,4 @@ void parse_input(uint8_t buffer_size){
 }
 
 
-#endif /* STATE_MACHINE_H_ */MAP_UART_transmitData
+#endif /* STATE_MACHINE_H_ */
