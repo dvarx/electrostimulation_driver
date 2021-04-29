@@ -509,6 +509,13 @@ int main(void)
     uint32_t counter_res_cl=0;
     bool prev_sw_sig=true;
 
+    //DON_EXPERIMENT
+    //Hint: Main Interrupt occurs @ 5kHz (200us)
+    uint32_t on_off_counter=0;
+    //on_off_counter_lim=Ton/200us
+    uint32_t on_off_counter_lim=25000;
+    bool is_on=false;
+
     while(1){
         if(run_main_loop){
             state=nextState;
@@ -598,7 +605,7 @@ int main(void)
             counter_disp++;
             if((counter_disp%counter_disp_max)==0){
                 hd44780_timer_isr();
-                toggle_debugging();
+                //toggle_debugging();
             }
             if((counter_disp%counter_disp_max2)==0){
                 hd44780_clear_screen();
@@ -627,7 +634,18 @@ int main(void)
                 set_disable();            //set the disable bit to low
             }
             else if(state==DEBUGSTATE){
-                unset_disable();
+                //DON experiment
+                on_off_counter++;
+                if(on_off_counter==on_off_counter_lim){
+                    is_on=!is_on;
+                    on_off_counter=0;
+                }
+                if(is_on)
+                    unset_disable();
+                else
+                    set_disable();
+
+                toggle_debugging();
             }
             else if(state==OPERATIONAL){
                 unset_disable();
