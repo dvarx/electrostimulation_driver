@@ -10,8 +10,9 @@
 
 #include <string.h>
 #include <stdlib.h>
+#include "coil_driver.h"
 
-enum system_state{INIT,OPERATIONAL,DEBUGSTATE,ERROR};
+enum system_state{INIT=0,OPERATIONAL=1,DEBUGSTATE=2,ERROR=3};
 
 extern char input_buffer[];
 const uint32_t res_freq_mhz=1000000;
@@ -33,6 +34,8 @@ const char SWITCH_STATE[]="!sws";
 const char SET_CURRENT[]="!cur";
 const char DEBUG[]="!dbg";
 const char STOP[]="!stp";
+const char GET_STATE[]="!gst";
+const char GET_CURRENT[]="!gcr";
 
 void parse_input(uint8_t buffer_size){
     //!frq command
@@ -71,7 +74,15 @@ void parse_input(uint8_t buffer_size){
     else if(!strncmp(input_buffer,STOP,sizeof(STOP)/sizeof(char)-1)){
         request_stop=true;
     }
+    //!gst command
+    else if(!strncmp(input_buffer,GET_STATE,sizeof(GET_STATE)/sizeof(char)-1)){
+        MAP_UART_transmitData(EUSCI_A0_BASE, state);
+    }
+    //!gcr command
+    else if(!strncmp(input_buffer,GET_CURRENT,sizeof(GET_CURRENT)/sizeof(char)-1)){
+        uart_write_string((char*)(&i_ref_ampl_ma),sizeof(i_ref_ampl_ma));
+    }
 }
 
 
-#endif /* STATE_MACHINE_H_ */
+#endif /* STATE_MACHINE_H_ */MAP_UART_transmitData
