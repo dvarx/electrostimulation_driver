@@ -24,6 +24,8 @@ extern bool start_control;
 extern enum system_state state;
 extern bool request_debug_state;
 extern bool request_stop;
+extern uint32_t Ton;
+extern uint32_t N_ONOFF_CYCLES;
 
 inline void set_pwm_freq(unsigned int freq);
 extern void set_duty(uint16_t);
@@ -36,6 +38,8 @@ const char DEBUG[]="!dbg";
 const char STOP[]="!stp";
 const char GET_STATE[]="!gst";
 const char GET_CURRENT[]="!gcr";
+const char SET_ONOFF[]="!onoff";
+const char SET_CYC[]="!cyc";
 
 void parse_input(uint8_t buffer_size){
     //!frq command
@@ -62,6 +66,14 @@ void parse_input(uint8_t buffer_size){
     //!cur command
     else if(!strncmp(input_buffer,SET_CURRENT,sizeof(SET_CURRENT)/sizeof(char)-1)){
         i_ref_ampl_ma=atoi(input_buffer+sizeof(SET_CURRENT)/sizeof(char)-1);
+    }
+    //on/off time command
+    else if(!strncmp(input_buffer,SET_ONOFF,sizeof(SET_ONOFF)/sizeof(char)-1)){
+        Ton=atoi(input_buffer+sizeof(SET_ONOFF)/sizeof(char)-1);
+    }
+    //cyc time command
+    else if(!strncmp(input_buffer,SET_CYC,sizeof(SET_CYC)/sizeof(char)-1)){
+        N_ONOFF_CYCLES=atoi(input_buffer+sizeof(SET_CYC)/sizeof(char)-1);
     }
     //!dbg command
     else if(!strncmp(input_buffer,DEBUG,sizeof(DEBUG)/sizeof(char)-1)){

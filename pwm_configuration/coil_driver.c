@@ -66,6 +66,10 @@ float res_ki=1.0;
 float err_i_hat_integral=0.0;   //integral of pi current controller
 float des_freq=10000.0;
 float des_imp=10000.0;
+uint32_t Ton=5000;                 // On-Off Time in ms DON_EXPERIMENT
+uint32_t N_ONOFF_CYCLES=720;    // # ON-OFF Cycles
+uint32_t cycle_counter=0;
+uint32_t on_off_counter_lim=5000/168e-3;
 //uart related parameters
 //parameters can be calculated for f(SMCLK)=48MHz at
 //http://software-dl.ti.com/msp430/msp430_public_sw/mcu/msp430/MSP430BaudRateConverter/index.html
@@ -513,7 +517,7 @@ int main(void)
     //Hint: Main Interrupt occurs @ 5kHz (200us)
     uint32_t on_off_counter=0;
     //on_off_counter_lim=Ton/168us
-    uint32_t on_off_counter_lim=29762;
+
     bool is_on=false;
 
     while(1){
@@ -531,7 +535,7 @@ int main(void)
                 }
                 else if(request_debug_state){
                     nextState=DEBUGSTATE;
-                    set_pwm_freq(cl_pwm_freq_mhz);
+                    set_pwm_freq(2635000);          // DON_EXPERIMENT
                     request_debug_state=false;
                 }
                 else
@@ -634,17 +638,24 @@ int main(void)
                 set_disable();            //set the disable bit to low
             }
             else if(state==DEBUGSTATE){
-                //DON experiment
-                set_pwm_freq(2635000);
+                //DON_EXPERIMENT
+                on_off_counter_lim=(float)Ton/168e-3;
+
                 on_off_counter++;
-                if(on_off_counter==on_off_counter_lim){
+                if(on_off_counter>=on_off_counter_lim){
                     is_on=!is_on;
                     on_off_counter=0;
+                    cycle_counter+=1;
                 }
                 if(is_on)
                     unset_disable();
                 else
                     set_disable();
+
+                if(cycle_counter>=N_ONOFF_CYCLES){
+                    request_stop=true;
+                    cycle_counter=0;
+                }
 
                 toggle_debugging();
             }
