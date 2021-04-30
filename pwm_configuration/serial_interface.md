@@ -12,3 +12,8 @@
 
 `!onoff5000` sets the Ton and Toff interval to 5000ms. `!cyc720` will let the system run for 720 cycles. The total time from start to finish is therefore 720*5s=3600s=1hour.
 
+## Serial Settings (Putty)
+
+- Baudrate 115200
+- Serial Port `COM6` (typically)
+- Enable `Local Echo` and `Local Line Editing` under `Terminal`
