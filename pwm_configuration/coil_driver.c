@@ -39,7 +39,6 @@ uint16_t duty=512;               //duty cycle
 bool run_main_loop=false;       //flag which triggers execution of one control loop cycle
 volatile uint16_t result;       //result of adc conversion
 bool closed_loop=true;
-const uint16_t clk_divider_cnt=8;   //clock division factor for counter
 //adc related parameters/variables
 int32_t avg_abs_current_acc_nmeas=0;
 const int Nmeas=1000;           //number of measurements in a single current average measurement
@@ -308,23 +307,25 @@ void init_cl_timer(void){
     __enable_irq();
 }
 
+//dead time in units of Timer_A clock cycles. Timer_A clock is 12MHz therefore one deadtime unit corresponds to 83nsns.
+const uint16_t deadtime=1;
 //init the pwm and the adc for synchronized sampling
 void init_pwm_adc(void){
     // Configure Timer_A1 (this timer is used for duty generation)
     TIMER_A1->CTL = TIMER_A_CTL_TASSEL_2 |  // SMCLK
-            TIMER_A_CTL_MC_1 |              // Up Mode
+            TIMER_A_CTL_MC_3 |              // Up-Down Mode
             TIMER_A_CTL_CLR |               // Clear TAR
-            TIMER_A_CTL_ID_3;               // Clk /8
+            TIMER_A_CTL_ID_2;               // Clk /8
     TIMER_A1->EX0 = TIMER_A_EX0_TAIDEX_0;   // Clk /1
     //configure CCR TA1.0 (ceiling register)
-    TIMER_A1->CCTL[0] = TIMER_A_CCTLN_OUTMOD_4; // CCR4 toggle mode
+    TIMER_A1->CCTL[0] = TIMER_A_CCTLN_OUTMOD_6; // toggle/set mode
     TIMER_A1->CCR[0] = 1024;
     //configure CCR TA1.1 (duty register)
-    TIMER_A1->CCR[1] = duty;                     //this value corresponds to the PWM value in [0...255]
-    TIMER_A1->CCTL[1] = TIMER_A_CCTLN_OUTMOD_3; // CCR4 toggle mode for PWM generation
+    TIMER_A1->CCR[1] = duty+deadtime;                    //this value corresponds to the PWM value in [0...255]
+    TIMER_A1->CCTL[1] = TIMER_A_CCTLN_OUTMOD_6;          // CCR4 toggle mode for PWM generation
     //configure CCR TA1.3 as the inverse duty cycle
-    TIMER_A1->CCR[3] = duty;                     //this value corresponds to the PWM value in [0...255]
-    TIMER_A1->CCTL[3] = TIMER_A_CCTLN_OUTMOD_6; // CCR4 toggle mode for PWM generation
+    TIMER_A1->CCR[3] = duty-deadtime;                   //this value corresponds to the PWM value in [0...255]
+    TIMER_A1->CCTL[3] = TIMER_A_CCTLN_OUTMOD_2;         // CCR4 toggle mode for PWM generation
 
 
     //legacy implementation
@@ -377,14 +378,14 @@ inline void set_duty(uint16_t duty){
 //set the pwm frequency to the one used in res mode
 //frequency in mHz
 inline void set_pwm_freq(unsigned int freq){
-    //formula for PWM: f_pwm=f_0/CCR[0]*2, f_0 at the moment is 12.8MHz
-    uint16_t counter_limit=12000000000/clk_divider_cnt/freq*4;
+    //formula for PWM: f_pwm=f_timera/CCR[0]*2, f_timera at the moment is 12MHz (clk of timer a)
+    uint16_t counter_limit=12000000000/freq/2;
     //we set CCR[0]:=800, therefore the output frequency is 30kHz
     TIMER_A1->CCR[0]=counter_limit;        //counter counts to CCR[0]
     //set duty cycle to 50%
-    TIMER_A1->CCR[1]=counter_limit/2;        //counter toggles at CCR[1]
+    TIMER_A1->CCR[1]=counter_limit/2+deadtime;        //counter toggles at CCR[1]
     //set inverted duty cycle to 50% as well
-    TIMER_A1->CCR[3] =counter_limit/2;
+    TIMER_A1->CCR[3] =counter_limit/2-deadtime;
     //set CCR[2] which is needed to trigger the ADC
     TIMER_A1->CCR[2] =counter_limit/4;
 }
