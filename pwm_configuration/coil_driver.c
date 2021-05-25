@@ -257,6 +257,7 @@ void init_gpio(void){
 
     //P2.7 as mode change request button
     P2->DIR &= (~BIT7);                     //P2.7 as input
+    P2->OUT |= BIT7;
     P2->REN |= BIT7;                        //enable pull up
     P2->IES |= BIT7;                        //interrupt on falling edge
     P2->IFG = 0;
@@ -426,17 +427,31 @@ void PORT1_IRQHandler(void){
     }
 }
 
+//timer 32 used for button debounce
+void init_timer32(void){
+    TIMER32_1->CONTROL |= TIMER32_CONTROL_ONESHOT;          // set the one-shot bit
+    TIMER32_1->CONTROL |= TIMER32_CONTROL_PRESCALE_2;       // set the prescaler to 256
+    TIMER32_1->CONTROL |= TIMER32_CONTROL_IE;               // set the interrupt enable bit
+    NVIC->ISER[0] = 1 << ((T32_INT1_IRQn) & 31);   //enable T32_INT1 interrupt of ARM Processor
+
+}
+
+//timer 32 interrupt service routine, reenables interrupt for P2.7 for debounce purpose
+void T32_INT1_IRQHandler(void){
+    if(!((P2->IN)&BIT7)){
+        if(state==INIT)
+            request_opmode_change=true;
+        else if(state==OPERATIONAL)
+            request_stop=true;
+    }
+    TIMER32_1->INTCLR|=BIT0;        //clear interrupt for timer32
+}
+
 void PORT2_IRQHandler(void){
-    if(state==INIT)
-        request_opmode_change=true;
-    else if(state==OPERATIONAL)
-        request_stop=true;
-
     P2->IFG &= (~BIT7);                 //clear the interrupt flag
-    P2->IE &= (~BIT7);                  //disable interrupt for P2.7
 
-    //set up a timer to reenable this timer in roughly 10ms for debouncing
-    TIMER32_1->LOAD=10000;
+    //set up a timer to check if the output is low 10ms from now
+    TIMER32_1->LOAD=20000;
     TIMER32_1->CONTROL|=TIMER32_CONTROL_ENABLE;       //set the enable bit
 }
 
@@ -514,20 +529,6 @@ void uart_write_string(char* string_ptr,uint8_t num){
     MAP_UART_enableInterrupt(EUSCI_A0_BASE, EUSCI_A_UART_TRANSMIT_INTERRUPT);
 }
 
-//timer 32 used for button debounce
-void init_timer32(void){
-    TIMER32_1->CONTROL |= TIMER32_CONTROL_ONESHOT;          // set the one-shot bit
-    TIMER32_1->CONTROL |= TIMER32_CONTROL_PRESCALE_2;       // set the prescaler to 256
-    TIMER32_1->CONTROL |= TIMER32_CONTROL_IE;               // set the interrupt enable bit
-    NVIC->ISER[0] = 1 << ((T32_INT1_IRQn) & 31);   //enable T32_INT1 interrupt of ARM Processor
-
-}
-
-//timer 32 interrupt service routine, reenables interrupt for P2.7 for debounce purpose
-void T32_INT1_IRQHandler(void){
-    P2->IE |= (BIT7);           //reenable interrupt on P2.7
-    TIMER32_1->INTCLR=1;        //clear interrupt for timer32
-}
 
 int main(void)
 {
