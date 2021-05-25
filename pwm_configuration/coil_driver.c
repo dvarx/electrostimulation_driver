@@ -255,11 +255,19 @@ void init_gpio(void){
     //P5.7 as debugging output
     P5->DIR |= BIT7;
 
+    //P2.7 as mode change request button
+    P2->DIR &= (~BIT7);                     //P2.7 as input
+    P2->REN |= BIT7;                        //enable pull up
+    P2->IES |= BIT7;                        //interrupt on falling edge
+    P2->IFG = 0;
+    P2->IE |= BIT7;                         //enable P2.7 interrupt
+    NVIC->ISER[1] = 1 << ((PORT2_IRQn) & 31);   //enable Port1 interrupt of ARM Processor
+
 
     P1->DIR &= (~BIT1);                     // P1.1 input (pull down switch)
     P1->REN |= BIT1;                        // enable pull-up
-    P1->IES = BIT1;                         // interrupt on falling edge
-    P1->IE = BIT1;                          // enable interrupt of Port1.1
+    P1->IES |= BIT1;                         // interrupt on falling edge
+    P1->IE |= BIT1;                          // enable interrupt of Port1.1
 
 
     P1->DIR &= (~BIT4);                     // P1.4 input (pull down switch)
@@ -416,6 +424,15 @@ void PORT1_IRQHandler(void){
         //set this bit to request a change of operational mode
         //request_opmode_change=true;
     }
+}
+
+void PORT2_IRQHandler(void){
+    if(state==INIT)
+        request_opmode_change=true;
+    else if(state==OPERATIONAL)
+        request_stop=true;
+
+    P2->IFG &= (~BIT7);                 //clear the interrupt flag
 }
 
 void TA0_0_IRQHandler(void){
