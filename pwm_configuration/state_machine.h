@@ -36,14 +36,15 @@ const char DEBUG[]="!dbg";
 const char STOP[]="!stp";
 const char GET_STATE[]="!gst";
 const char GET_CURRENT[]="!gcr";
+uint32_t debug_frequency_mhz=10000000;
 
 void parse_input(uint8_t buffer_size){
     //!frq command
     if(!strncmp(input_buffer,SET_FREQ_CMD,sizeof(SET_FREQ_CMD)/sizeof(char)-1)){
         //changing the frequency manually only works in debug state or resonant state
         if(state==DEBUGSTATE){
-            uint32_t des_res_freq=(uint32_t)atoi(input_buffer+sizeof(SET_FREQ_CMD)/sizeof(char)-1);
-            set_pwm_freq(des_res_freq);
+            debug_frequency_mhz=(uint32_t)atoi(input_buffer+sizeof(SET_FREQ_CMD)/sizeof(char)-1);
+            set_pwm_freq(debug_frequency_mhz);
         }
         return;
     }

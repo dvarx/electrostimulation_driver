@@ -51,8 +51,11 @@ int32_t main_acc_avg_abs_current=0;                //accumulator for absolute av
 int32_t main_avg_abs_current_est=0;
 uint16_t avgd_current_meass_offset=0;     //offset into the current_avg_meas array
 float imeas_hat=0.0;                    //measured current amplitude
-const int32_t va_offset=8192;           //measured offset (needs to be calibrated) (nominal 0x1FFF=8192)
-const float conv_const=0.001359167287240;        //conversion from
+const int32_t va_offset=7450;           //measured offset (needs to be calibrated) (nominal 0x1FFF=8192)
+//ireal_ma = alpha*main_avg_abs_current_est+beta
+//these values were linearly fitted
+const float alpha=13.863;
+const float beta=317.7;
 //control related parameters
 #define V_DC 30.0
 #define CONTROLLER_DT 200E-6
@@ -63,7 +66,7 @@ struct pi_controller_32 current_controller={0.0,0.0,0.0,8.0,0.0,CONTROLLER_DT};
 float res_kp=5.0;
 float res_ki=1.0;
 float err_i_hat_integral=0.0;   //integral of pi current controller
-float des_freq=10000.0;
+float des_freq_controller=10000.0;
 float des_imp=10000.0;
 //uart related parameters
 //parameters can be calculated for f(SMCLK)=48MHz at
@@ -104,6 +107,8 @@ int32_t rotary_counter=0;
 uint8_t was_rotated;            //rotary encoder variable (0 if not rotated, 1 if rotated cw, 2 if rotated ccw)
 uint8_t was_pressed;            //press button variable (1 if was pressed, 0 if not)
 uint8_t cursor_position=1;        //position of the selection cursor [5.28 , first digit 0 second digit 1 third digit 2]
+//debug related variables
+extern uint32_t debug_frequency_mhz;
 
 void init_adc(void){
     // set the s&h time to 16 ADCCLK cycles
@@ -441,7 +446,7 @@ void T32_INT1_IRQHandler(void){
     if(!((P2->IN)&BIT7)){
         if(state==INIT)
             request_opmode_change=true;
-        else if(state==OPERATIONAL)
+        else if(state==OPERATIONAL||state==ERROR)
             request_stop=true;
     }
     TIMER32_1->INTCLR|=BIT0;        //clear interrupt for timer32
@@ -646,11 +651,23 @@ int main(void)
                 if(state==OPERATIONAL){
                     sprintf(buffer_1,"Des. Curr: %05.3f",(float)i_ref_ampl_ma*1e-3);
                     sprintf(buffer_2,"Current:   %05.3f",imeas_hat);
-                    sprintf(buffer_3,"Freq:      %05.3f",des_freq);
+                    sprintf(buffer_3,"Freq:      %05.3f",des_freq_controller);
 
                     hd44780_write_string(buffer_1,1,1,NO_CR_LF);
                     hd44780_write_string(buffer_2,2,1,NO_CR_LF);
                     hd44780_write_string(buffer_3,3,1,NO_CR_LF);
+                }
+                else if(state==ERROR){
+                    hd44780_write_string("ERROR",1,1,NO_CR_LF);
+                    hd44780_write_string("Click Button",2,1,NO_CR_LF);
+                    hd44780_write_string("For Reset",3,1,NO_CR_LF);
+                }
+                else if(state==DEBUGSTATE){
+                    sprintf(buffer_1,"Freq:      %5d",debug_frequency_mhz/1000);
+                    sprintf(buffer_2,"Current:   %05.3f",imeas_hat);
+
+                    hd44780_write_string(buffer_1,1,1,NO_CR_LF);
+                    hd44780_write_string(buffer_2,2,1,NO_CR_LF);
                 }
                 else{
                     hd44780_write_string("Controller Ready",1,1,NO_CR_LF);
@@ -667,6 +684,7 @@ int main(void)
                 set_disable();            //set the disable bit to low
             }
             else if(state==DEBUGSTATE){
+                imeas_hat=main_avg_abs_current_est*alpha+beta;
                 unset_disable();
             }
             else if(state==OPERATIONAL){
@@ -679,23 +697,24 @@ int main(void)
                     //calculate the frequency for desired current amplitude i_ref_ampl
                     //first calculate the necessary impedance
                     des_imp=1e3*v_in_hat/i_ref_ampl_ma;
-                    des_freq=inverse_impedance(des_imp);
+                    des_freq_controller=inverse_impedance(des_imp);
 
 
                     //run PI current controller
-                    imeas_hat=main_avg_abs_current_est*conv_const;
+                    imeas_hat=main_avg_abs_current_est*alpha+beta;
                     //error signal
-                    float err_i_hat=1e-3*(float)i_ref_ampl_ma-imeas_hat;
+                    float err_i_hat=1e-3*((float)i_ref_ampl_ma-imeas_hat);
                     err_i_hat_integral+=err_i_hat;
-                    des_freq=des_freq-(res_kp*err_i_hat+res_ki*err_i_hat_integral);
+                    des_freq_controller=des_freq_controller-(res_kp*err_i_hat+res_ki*err_i_hat_integral);
 
                     //check if there was an error calculating the des_freq
-                    if(des_freq<minfreq){
+                    if(des_freq_controller<minfreq){
                         set_pwm_freq(1000000);
+                        i_ref_ampl_ma=1000;
                         fatal_error();
                     }
                     else
-                        set_pwm_freq((unsigned int)1000.0*des_freq);
+                        set_pwm_freq((unsigned int)1000.0*des_freq_controller);
                 }
             }
             run_main_loop=false;
