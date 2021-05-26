@@ -573,6 +573,9 @@ int main(void)
                     set_pwm_freq(cl_pwm_freq_mhz);
                     request_debug_state=false;
                 }
+                else if(request_calibration){
+                    nextState=CALIBRATION;
+                }
                 else
                     nextState=INIT;
                 break;
@@ -597,6 +600,9 @@ int main(void)
                     nextState=INIT;
                     request_stop=false;
                 }
+            case CALIBRATION:
+                if(request_stop)
+                    nextState=INIT;
             }
 
             //------------------------------
@@ -719,6 +725,7 @@ int main(void)
                 }
             }
             else if(state==CALIBRATION){
+                unset_disable();
                 if(!calibration_initialized){
                     init_calibration();
                     calibration_initialized=true;
@@ -731,6 +738,12 @@ int main(void)
                         imeas_hat=main_avg_abs_current_est*alpha+beta;
                         meas_currents[meas_number]=(uint16_t)(1000*imeas_hat);
                         meas_number++;
+                    }
+                    if(meas_number==N_MEAS-1){
+                        set_disable();
+                        set_pwm_freq(100000000);
+                        request_calibration=false;
+                        request_stop=true;
                     }
                 }
 
