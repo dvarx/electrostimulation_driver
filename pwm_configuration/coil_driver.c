@@ -9,6 +9,7 @@
 #include "stdio.h"
 #include "rotary_enc_sw.h"
 #include "coil_driver.h"
+#include "calibration.h"
 
 /*
  * Peripherals Overview
@@ -716,6 +717,23 @@ int main(void)
                     else
                         set_pwm_freq((unsigned int)1000.0*des_freq_controller);
                 }
+            }
+            else if(state==CALIBRATION){
+                if(!calibration_initialized){
+                    init_calibration();
+                    calibration_initialized=true;
+                }
+                else{
+                    set_pwm_freq(meas_freqs[meas_number]*1000);
+                    calib_wait_counter++;
+                    if(calib_wait_counter>=CALIB_WAIT_CYCLES){
+                        //compute the current in mA
+                        imeas_hat=main_avg_abs_current_est*alpha+beta;
+                        meas_currents[meas_number]=(uint16_t)(1000*imeas_hat);
+                        meas_number++;
+                    }
+                }
+
             }
             run_main_loop=false;
 
