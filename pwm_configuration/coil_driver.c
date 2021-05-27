@@ -1,3 +1,4 @@
+#include <frequency_lookup.h>
 #include "ti/devices/msp432p4xx/inc/msp.h"
 #include <stdbool.h>
 #include "current_controller.h"
@@ -5,10 +6,10 @@
 #include "state_machine.h"
 #include <math.h>
 #include "libs/hd44780.h"
-#include "impedance_lookup.h"
 #include "stdio.h"
 #include "rotary_enc_sw.h"
 #include "coil_driver.h"
+#include "calibration.h"
 
 /*
  * Peripherals Overview
@@ -572,6 +573,9 @@ int main(void)
                     set_pwm_freq(cl_pwm_freq_mhz);
                     request_debug_state=false;
                 }
+                else if(request_calibration){
+                    nextState=CALIBRATION;
+                }
                 else
                     nextState=INIT;
                 break;
@@ -596,6 +600,9 @@ int main(void)
                     nextState=INIT;
                     request_stop=false;
                 }
+            case CALIBRATION:
+                if(request_stop)
+                    nextState=INIT;
             }
 
             //------------------------------
@@ -699,11 +706,8 @@ int main(void)
 
                 //counter makes sure this loop is only executed every 100th interrupt
                 if(counter_res_cl==0){
-                    //calculate the frequency for desired current amplitude i_ref_ampl
-                    //first calculate the necessary impedance
-                    des_imp=1e3*v_in_hat/i_ref_ampl_ma;
-                    des_freq_controller=inverse_impedance(des_imp);
-
+                    //determine the necessary frequency for the desired current amplitude from the lookup table
+                    des_freq_controller=frequency_lookup(1e3*i_ref_ampl_ma);
 
                     //run PI current controller
                     imeas_hat=main_avg_abs_current_est*alpha+beta;
@@ -721,6 +725,30 @@ int main(void)
                     else
                         set_pwm_freq((unsigned int)1000.0*des_freq_controller);
                 }
+            }
+            else if(state==CALIBRATION){
+                unset_disable();
+                if(!calibration_initialized){
+                    init_calibration();
+                    calibration_initialized=true;
+                }
+                else{
+                    set_pwm_freq(meas_freqs[meas_number]*1000);
+                    calib_wait_counter++;
+                    if(calib_wait_counter>=CALIB_WAIT_CYCLES){
+                        //compute the current in mA
+                        imeas_hat=main_avg_abs_current_est*alpha+beta;
+                        meas_currents[meas_number]=(uint16_t)(1000*imeas_hat);
+                        meas_number++;
+                    }
+                    if(meas_number==N_MEAS-1){
+                        set_disable();
+                        set_pwm_freq(100000000);
+                        request_calibration=false;
+                        request_stop=true;
+                    }
+                }
+
             }
             run_main_loop=false;
 

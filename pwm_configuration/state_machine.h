@@ -12,7 +12,7 @@
 #include <stdlib.h>
 #include "coil_driver.h"
 
-enum system_state{INIT=0,OPERATIONAL=1,DEBUGSTATE=2,ERROR=3};
+enum system_state{INIT=0,OPERATIONAL=1,DEBUGSTATE=2,ERROR=3,CALIBRATION=4};
 
 extern char input_buffer[];
 const uint32_t res_freq_mhz=10000000;
