@@ -12,9 +12,9 @@
 #include <stdbool.h>
 
 #define MAX_MEAS_FREQ 3500
-#define MIN_MEAS_FREQ 2500
+#define MIN_MEAS_FREQ 2600
 #define N_MEAS 100
-#define CALIB_WAIT_CYCLES 200
+#define CALIB_WAIT_CYCLES 10000
 
 extern uint16_t meas_freqs[N_MEAS];
 extern uint16_t meas_currents[N_MEAS];

@@ -52,11 +52,11 @@ int32_t main_acc_avg_abs_current=0;                //accumulator for absolute av
 int32_t main_avg_abs_current_est=0;
 uint16_t avgd_current_meass_offset=0;     //offset into the current_avg_meas array
 float imeas_hat=0.0;                    //measured current amplitude
-const int32_t va_offset=7450;           //measured offset (needs to be calibrated) (nominal 0x1FFF=8192)
+const int32_t va_offset=7415;           //measured offset (needs to be calibrated) (nominal 0x1FFF=8192)
 //ireal_ma = alpha*main_avg_abs_current_est+beta
 //these values were linearly fitted
-const float alpha=13.863;
-const float beta=317.7;
+const float alpha=11.761;
+const float beta=134.28;
 //control related parameters
 #define V_DC 30.0
 #define CONTROLLER_DT 200E-6
@@ -707,7 +707,7 @@ int main(void)
                 //counter makes sure this loop is only executed every 100th interrupt
                 if(counter_res_cl==0){
                     //determine the necessary frequency for the desired current amplitude from the lookup table
-                    des_freq_controller=frequency_lookup(1e3*i_ref_ampl_ma);
+                    des_freq_controller=frequency_lookup(i_ref_ampl_ma);
 
                     //run PI current controller
                     imeas_hat=main_avg_abs_current_est*alpha+beta;
@@ -738,8 +738,9 @@ int main(void)
                     if(calib_wait_counter>=CALIB_WAIT_CYCLES){
                         //compute the current in mA
                         imeas_hat=main_avg_abs_current_est*alpha+beta;
-                        meas_currents[meas_number]=(uint16_t)(1000*imeas_hat);
+                        meas_currents[meas_number]=(uint16_t)(imeas_hat);
                         meas_number++;
+                        calib_wait_counter=0;
                     }
                     if(meas_number==N_MEAS-1){
                         set_disable();
