@@ -649,13 +649,15 @@ int main(void)
                 hd44780_clear_screen();
 
                 if(state==OPERATIONAL){
+                    sprintf(buffer_0,"CONST. CURRENT MODE",(float)i_ref_ampl_ma*1e-3);
                     sprintf(buffer_1,"Des. Curr: %05.3f",(float)i_ref_ampl_ma*1e-3);
                     sprintf(buffer_2,"Current:   %05.3f",imeas_hat);
                     sprintf(buffer_3,"Freq:      %05.3f",des_freq_controller);
 
-                    hd44780_write_string(buffer_1,1,1,NO_CR_LF);
-                    hd44780_write_string(buffer_2,2,1,NO_CR_LF);
-                    hd44780_write_string(buffer_3,3,1,NO_CR_LF);
+                    hd44780_write_string(buffer_0,1,1,NO_CR_LF);
+                    hd44780_write_string(buffer_1,2,1,NO_CR_LF);
+                    hd44780_write_string(buffer_2,3,1,NO_CR_LF);
+                    hd44780_write_string(buffer_3,4,1,NO_CR_LF);
                 }
                 else if(state==ERROR){
                     hd44780_write_string("ERROR",1,1,NO_CR_LF);
@@ -663,14 +665,17 @@ int main(void)
                     hd44780_write_string("For Reset",3,1,NO_CR_LF);
                 }
                 else if(state==DEBUGSTATE){
+                    sprintf(buffer_0,"DEBUG MODE",(float)i_ref_ampl_ma*1e-3);
                     sprintf(buffer_1,"Freq:      %5d",debug_frequency_mhz/1000);
                     sprintf(buffer_2,"Current:   %05.3f",imeas_hat);
 
-                    hd44780_write_string(buffer_1,1,1,NO_CR_LF);
-                    hd44780_write_string(buffer_2,2,1,NO_CR_LF);
+                    hd44780_write_string(buffer_0,1,1,NO_CR_LF);
+                    hd44780_write_string(buffer_1,2,1,NO_CR_LF);
+                    hd44780_write_string(buffer_2,3,1,NO_CR_LF);
                 }
                 else{
                     hd44780_write_string("Controller Ready",1,1,NO_CR_LF);
+                    hd44780_write_string("                v0.1",4,1,NO_CR_LF);
                 }
             }
 
