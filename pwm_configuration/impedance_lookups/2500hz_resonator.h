@@ -14,7 +14,7 @@ float minfreq=2546.000000;
 unsigned int num_entries=228;
 
 //auto generated code for frequencies
-const float freqs[]={
+const float lookup_freqs[]={
 2546.000000,
 2548.000000,
 2550.000000,
@@ -246,7 +246,7 @@ const float freqs[]={
 };
 
 
-const float imps[]={
+const float lookup_currents[]={
 7.952000,
 7.972000,
 8.009000,

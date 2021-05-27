@@ -14,7 +14,7 @@ float minfreq=430.0;       //closest frequency to fres that is allowed
 unsigned int num_entries=290;    // #of impedance / frequency entries
 
 //auto generated code for frequencies
-const float freqs[]={
+const float lookup_freqs¨[]={
 325.700000,
 328.000000,
 330.300000,

@@ -1,3 +1,4 @@
+#include <frequency_lookup.h>
 #include "ti/devices/msp432p4xx/inc/msp.h"
 #include <stdbool.h>
 #include "current_controller.h"
@@ -5,7 +6,6 @@
 #include "state_machine.h"
 #include <math.h>
 #include "libs/hd44780.h"
-#include "impedance_lookup.h"
 #include "stdio.h"
 #include "rotary_enc_sw.h"
 #include "coil_driver.h"
@@ -701,11 +701,8 @@ int main(void)
 
                 //counter makes sure this loop is only executed every 100th interrupt
                 if(counter_res_cl==0){
-                    //calculate the frequency for desired current amplitude i_ref_ampl
-                    //first calculate the necessary impedance
-                    des_imp=1e3*v_in_hat/i_ref_ampl_ma;
-                    des_freq_controller=inverse_impedance(des_imp);
-
+                    //determine the necessary frequency for the desired current amplitude from the lookup table
+                    des_freq_controller=frequency_lookup(1e3*i_ref_ampl_ma);
 
                     //run PI current controller
                     imeas_hat=main_avg_abs_current_est*alpha+beta;
