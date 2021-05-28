@@ -10,6 +10,7 @@
 #include "rotary_enc_sw.h"
 #include "coil_driver.h"
 #include "calibration.h"
+#include "frequency_lookup.h"
 
 /*
  * Peripherals Overview
@@ -69,6 +70,7 @@ float res_ki=1.0;
 float err_i_hat_integral=0.0;   //integral of pi current controller
 float des_freq_controller=10000.0;
 float des_imp=10000.0;
+uint32_t des_freq_mhz=3400000;     //desired frequency for constant frequency mode
 //uart related parameters
 //parameters can be calculated for f(SMCLK)=48MHz at
 //http://software-dl.ti.com/msp430/msp430_public_sw/mcu/msp430/MSP430BaudRateConverter/index.html
@@ -92,6 +94,8 @@ uint8_t send_pointer=0;
 //state machine related parameters and variables
 enum system_state state=INIT;
 enum system_state nextState=INIT;
+enum operational_mode opmode=CONSTANT_CURRENT;
+enum init_screen in_screen=START;
 const uint16_t n_shutdown=20+2;                 //number of cycles to wait before energy is assumed to be fed back into DC link
 uint16_t transition_counter=0;
 bool request_opmode_change=false;                //this bit is set when a change of state from CLOSED_LOOP to RESONANT is requested
@@ -103,6 +107,7 @@ char buffer_0[20]="";
 char buffer_1[20]="";
 char buffer_2[20]="";
 char buffer_3[20]="";
+uint8_t selection_wheel=0;
 //rotary encoder / switch related parameters
 int32_t rotary_counter=0;
 uint8_t was_rotated;            //rotary encoder variable (0 if not rotated, 1 if rotated cw, 2 if rotated ccw)
@@ -611,20 +616,42 @@ int main(void)
             //check the rotary switch and update reference current
             run_rotary_enc_fsm((P3->IN)&BIT7,(P5->IN)&BIT2,&was_rotated);
             if(was_rotated==1){
-                if(cursor_position==0)
-                    i_ref_ampl_ma+=1000;
-                else if(cursor_position==1)
-                    i_ref_ampl_ma+=100;
-                else if(cursor_position==2)
-                    i_ref_ampl_ma+=10;
+                if(state==OPERATIONAL){
+                    if(opmode==CONSTANT_CURRENT){
+                        if(cursor_position==0)
+                            i_ref_ampl_ma+=1000;
+                        else if(cursor_position==1)
+                            i_ref_ampl_ma+=100;
+                        else if(cursor_position==2)
+                            i_ref_ampl_ma+=10;
+                    }
+                    else{
+                        if(des_freq_mhz<maxfreqmhz_cfctrl)
+                            des_freq_mhz+=10000;
+                    }
+                }
+                else if(state==INIT){
+                    selection_wheel=(selection_wheel+1)%2;
+                }
             }
             else if(was_rotated==2){
-                if(cursor_position==0)
-                    i_ref_ampl_ma-=1000;
-                else if(cursor_position==1)
-                    i_ref_ampl_ma-=100;
-                else if(cursor_position==2)
-                    i_ref_ampl_ma-=10;
+                if(state==OPERATIONAL){
+                    if(opmode==CONSTANT_CURRENT){
+                        if(cursor_position==0)
+                            i_ref_ampl_ma-=1000;
+                        else if(cursor_position==1)
+                            i_ref_ampl_ma-=100;
+                        else if(cursor_position==2)
+                            i_ref_ampl_ma-=10;
+                    }
+                    else{
+                        if(des_freq_mhz>minfreqmhz_cfctrl)
+                            des_freq_mhz-=10000;
+                    }
+                }
+                else if(state==INIT){
+                    selection_wheel=(selection_wheel+1)%2;
+                }
             }
             //check max/min limits for reference current amplitude
             if(i_ref_ampl_ma>i_ref_amp_max)
@@ -633,8 +660,18 @@ int main(void)
                 i_ref_ampl_ma=0;
             //check if switch signal sw (P3.5) has had a rising edge
             bool sw_sig=((P3->IN&BIT5)==0);
-            if(sw_sig&(!prev_sw_sig))
-                cursor_position=(cursor_position+1)%3;
+            if(sw_sig&(!prev_sw_sig)){
+                if(state==OPERATIONAL)
+                    cursor_position=(cursor_position+1)%3;
+                else if(state==INIT){
+                    if(in_screen==START){
+                        in_screen=(selection_wheel==0) ? SELECT_MODE : SELECT_RESONATOR;
+                    }
+                    else{
+                        in_screen=START;
+                    }
+                }
+            }
             prev_sw_sig=sw_sig;
 
             //------------------------------
@@ -680,9 +717,17 @@ int main(void)
                     hd44780_write_string(buffer_1,2,1,NO_CR_LF);
                     hd44780_write_string(buffer_2,3,1,NO_CR_LF);
                 }
-                else{
-                    hd44780_write_string("Controller Ready",1,1,NO_CR_LF);
-                    hd44780_write_string("                v0.1",4,1,NO_CR_LF);
+                else if(state==INIT){
+                    hd44780_write_string("Ctrl Ready      v0.1",1,1,NO_CR_LF);
+                    hd44780_write_string("                    ",2,1,NO_CR_LF);
+                    if(selection_wheel==0)
+                        hd44780_write_string("[*] Select Mode ",3,1,NO_CR_LF);
+                    else
+                        hd44780_write_string("[ ] Select Mode ",3,1,NO_CR_LF);
+                    if(selection_wheel==1)
+                        hd44780_write_string("[*] Select Resonator",4,1,NO_CR_LF);
+                    else
+                        hd44780_write_string("[ ] Select Resonator",4,1,NO_CR_LF);
                 }
             }
 
@@ -702,28 +747,32 @@ int main(void)
             else if(state==OPERATIONAL){
                 unset_disable();
 
-                counter_res_cl=(counter_res_cl+1)%100;
+                if(opmode==CONSTANT_CURRENT){
+                    counter_res_cl=(counter_res_cl+1)%100;
+                    //counter makes sure this loop is only executed every 100th interrupt
+                    if(counter_res_cl==0){
+                        //determine the necessary frequency for the desired current amplitude from the lookup table
+                        des_freq_controller=frequency_lookup(i_ref_ampl_ma);
 
-                //counter makes sure this loop is only executed every 100th interrupt
-                if(counter_res_cl==0){
-                    //determine the necessary frequency for the desired current amplitude from the lookup table
-                    des_freq_controller=frequency_lookup(i_ref_ampl_ma);
+                        //run PI current controller
+                        imeas_hat=main_avg_abs_current_est*alpha+beta;
+                        //error signal
+                        float err_i_hat=1e-3*((float)i_ref_ampl_ma-imeas_hat);
+                        err_i_hat_integral+=err_i_hat;
+                        des_freq_controller=des_freq_controller-(res_kp*err_i_hat+res_ki*err_i_hat_integral);
 
-                    //run PI current controller
-                    imeas_hat=main_avg_abs_current_est*alpha+beta;
-                    //error signal
-                    float err_i_hat=1e-3*((float)i_ref_ampl_ma-imeas_hat);
-                    err_i_hat_integral+=err_i_hat;
-                    des_freq_controller=des_freq_controller-(res_kp*err_i_hat+res_ki*err_i_hat_integral);
-
-                    //check if there was an error calculating the des_freq
-                    if(des_freq_controller<minfreq){
-                        set_pwm_freq(1000000);
-                        i_ref_ampl_ma=1000;
-                        fatal_error();
+                        //check if there was an error calculating the des_freq
+                        if(des_freq_controller<minfreq_cfctrl){
+                            set_pwm_freq(1000000);
+                            i_ref_ampl_ma=1000;
+                            fatal_error();
+                        }
+                        else
+                            set_pwm_freq((unsigned int)1000.0*des_freq_controller);
                     }
-                    else
-                        set_pwm_freq((unsigned int)1000.0*des_freq_controller);
+                }
+                else{
+
                 }
             }
             else if(state==CALIBRATION){

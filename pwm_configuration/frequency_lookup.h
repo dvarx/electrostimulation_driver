@@ -2,6 +2,17 @@
 #ifndef FREQUENCY_LOOKUP_H_
 #define FREQUENCY_LOOKUP_H_
 
+#define RESONATOR_2500HZ
+
+#ifdef RESONATOR_350HZ
+    #include "impedance_lookups/350hz_resonator.h"
+#elif defined(RESONATOR_2500HZ)
+    #include "impedance_lookups/2500hz_resonator.h"
+#else
+    #error Error : No resonator was defined
+#endif
+
+
 extern float fres;       //resonance frequency
 extern float maxfreq;       //maximum measured frequency
 extern float minfreq;       //closest frequency to fres that is allowed

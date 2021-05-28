@@ -13,6 +13,8 @@
 #include "coil_driver.h"
 
 enum system_state{INIT=0,OPERATIONAL=1,DEBUGSTATE=2,ERROR=3,CALIBRATION=4};
+enum operational_mode{CONSTANT_CURRENT=0,CONSTANT_FREQUENCY=1};
+enum init_screen{START,SELECT_MODE,SELECT_RESONATOR};
 
 extern char input_buffer[];
 const uint32_t res_freq_mhz=10000000;
@@ -22,6 +24,8 @@ extern uint32_t i_ref_ampl_ma;
 extern bool request_opmode_change;
 extern bool start_control;
 extern enum system_state state;
+extern enum operational_mode opmode;
+extern enum init_screen in_screen;
 extern bool request_debug_state;
 extern bool request_stop;
 

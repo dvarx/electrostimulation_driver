@@ -7,8 +7,6 @@
 
 #include <frequency_lookup.h>
 
-#define RESONATOR_2500HZ
-
 //calculates the frequency f where Z(f)=imp
 float frequency_lookup(float current_amplitude){
     //if impedance requested is too high return -1.0
@@ -31,11 +29,3 @@ float frequency_lookup(float current_amplitude){
     //interpolate frequency
     return (current_amplitude-lookup_currents[lower_ind])/(lookup_currents[upper_ind]-lookup_currents[lower_ind])*(lookup_freqs[upper_ind]-lookup_freqs[lower_ind])+lookup_freqs[lower_ind];
 }
-
-#ifdef RESONATOR_350HZ
-    #include "impedance_lookups/350hz_resonator.h"
-#elif defined(RESONATOR_2500HZ)
-    #include "impedance_lookups/2500hz_resonator.h"
-#else
-    #error Error : No resonator was defined
-#endif
