@@ -96,6 +96,7 @@ enum system_state state=INIT;
 enum system_state nextState=INIT;
 enum operational_mode opmode=CONSTANT_CURRENT;
 enum init_screen in_screen=START;
+enum resonator resonator_num=RES2500HZ;
 const uint16_t n_shutdown=20+2;                 //number of cycles to wait before energy is assumed to be fed back into DC link
 uint16_t transition_counter=0;
 bool request_opmode_change=false;                //this bit is set when a change of state from CLOSED_LOOP to RESONANT is requested
@@ -107,7 +108,7 @@ char buffer_0[20]="";
 char buffer_1[20]="";
 char buffer_2[20]="";
 char buffer_3[20]="";
-uint8_t selection_wheel=0;
+uint8_t selection_wheel_start=0;                //selection wheel for start screen in INIT state
 //rotary encoder / switch related parameters
 int32_t rotary_counter=0;
 uint8_t was_rotated;            //rotary encoder variable (0 if not rotated, 1 if rotated cw, 2 if rotated ccw)
@@ -631,7 +632,12 @@ int main(void)
                     }
                 }
                 else if(state==INIT){
-                    selection_wheel=(selection_wheel+1)%2;
+                    if(in_screen==SELECT_MODE)
+                        opmode=(opmode+1)%2;
+                    else if(in_screen==SELECT_RESONATOR)
+                        resonator_num=(resonator_num+1)%2;
+                    else
+                        selection_wheel_start=(selection_wheel_start+1)%2;
                 }
             }
             else if(was_rotated==2){
@@ -650,7 +656,12 @@ int main(void)
                     }
                 }
                 else if(state==INIT){
-                    selection_wheel=(selection_wheel+1)%2;
+                    if(in_screen==SELECT_MODE)
+                        opmode=(opmode-1)%2;
+                    else if(in_screen==SELECT_RESONATOR)
+                        resonator_num=(resonator_num-1)%2;
+                    else
+                        selection_wheel_start=(selection_wheel_start+1)%2;
                 }
             }
             //check max/min limits for reference current amplitude
@@ -658,14 +669,14 @@ int main(void)
                 i_ref_ampl_ma=i_ref_amp_max;
             else if(i_ref_ampl_ma<0)
                 i_ref_ampl_ma=0;
-            //check if switch signal sw (P3.5) has had a rising edge
+            //check if rotary knob (switch signal sw (P3.5)) has had a rising edge
             bool sw_sig=((P3->IN&BIT5)==0);
             if(sw_sig&(!prev_sw_sig)){
                 if(state==OPERATIONAL)
                     cursor_position=(cursor_position+1)%3;
                 else if(state==INIT){
                     if(in_screen==START){
-                        in_screen=(selection_wheel==0) ? SELECT_MODE : SELECT_RESONATOR;
+                        in_screen=(selection_wheel_start==0) ? SELECT_MODE : SELECT_RESONATOR;
                     }
                     else{
                         in_screen=START;
@@ -693,15 +704,28 @@ int main(void)
                 hd44780_clear_screen();
 
                 if(state==OPERATIONAL){
-                    sprintf(buffer_0,"CONST. CURRENT MODE",(float)i_ref_ampl_ma*1e-3);
-                    sprintf(buffer_1,"Des. Curr: %05.3f",(float)i_ref_ampl_ma*1e-3);
-                    sprintf(buffer_2,"Current:   %05.3f",imeas_hat);
-                    sprintf(buffer_3,"Freq:      %05.3f",des_freq_controller);
+                    if(opmode==CONSTANT_CURRENT){
+                        sprintf(buffer_0,"CONST. CURRENT MODE",(float)i_ref_ampl_ma*1e-3);
+                        sprintf(buffer_1,"Des. Curr: %05.3f",(float)i_ref_ampl_ma*1e-3);
+                        sprintf(buffer_2,"Current:   %05.3f",imeas_hat);
+                        sprintf(buffer_3,"Freq:      %05.3f",des_freq_controller);
 
-                    hd44780_write_string(buffer_0,1,1,NO_CR_LF);
-                    hd44780_write_string(buffer_1,2,1,NO_CR_LF);
-                    hd44780_write_string(buffer_2,3,1,NO_CR_LF);
-                    hd44780_write_string(buffer_3,4,1,NO_CR_LF);
+                        hd44780_write_string(buffer_0,1,1,NO_CR_LF);
+                        hd44780_write_string(buffer_1,2,1,NO_CR_LF);
+                        hd44780_write_string(buffer_2,3,1,NO_CR_LF);
+                        hd44780_write_string(buffer_3,4,1,NO_CR_LF);
+                    }
+                    else{
+                        sprintf(buffer_0,"CONST. FREQU. MODE  ",(float)i_ref_ampl_ma*1e-3);
+                        sprintf(buffer_1,"                    ",(float)i_ref_ampl_ma*1e-3);
+                        sprintf(buffer_2,"Current:   %05.3f",imeas_hat);
+                        sprintf(buffer_3,"Freq:      %5d",des_freq_mhz/1000);
+
+                        hd44780_write_string(buffer_0,1,1,NO_CR_LF);
+                        hd44780_write_string(buffer_1,2,1,NO_CR_LF);
+                        hd44780_write_string(buffer_2,3,1,NO_CR_LF);
+                        hd44780_write_string(buffer_3,4,1,NO_CR_LF);
+                    }
                 }
                 else if(state==ERROR){
                     hd44780_write_string("ERROR",1,1,NO_CR_LF);
@@ -718,16 +742,27 @@ int main(void)
                     hd44780_write_string(buffer_2,3,1,NO_CR_LF);
                 }
                 else if(state==INIT){
-                    hd44780_write_string("Ctrl Ready      v0.1",1,1,NO_CR_LF);
-                    hd44780_write_string("                    ",2,1,NO_CR_LF);
-                    if(selection_wheel==0)
-                        hd44780_write_string("[*] Select Mode ",3,1,NO_CR_LF);
-                    else
-                        hd44780_write_string("[ ] Select Mode ",3,1,NO_CR_LF);
-                    if(selection_wheel==1)
-                        hd44780_write_string("[*] Select Resonator",4,1,NO_CR_LF);
-                    else
+                    if(in_screen==START){
+                        hd44780_write_string("Ctrl Ready      v0.1",1,1,NO_CR_LF);
+                        hd44780_write_string("                    ",2,1,NO_CR_LF);
+                        hd44780_write_string("[ ] Select Mode     ",3,1,NO_CR_LF);
                         hd44780_write_string("[ ] Select Resonator",4,1,NO_CR_LF);
+                        if(selection_wheel_start==0)
+                            hd44780_write_string("x",3,2,NO_CR_LF);
+                        else
+                            hd44780_write_string("x",4,2,NO_CR_LF);
+                    }
+                    else if(in_screen==SELECT_MODE){
+                        hd44780_write_string("Mode Select         ",1,1,NO_CR_LF);
+                        hd44780_write_string("                    ",2,1,NO_CR_LF);
+                        hd44780_write_string("[ ] Const. Current  ",3,1,NO_CR_LF);
+                        hd44780_write_string("[ ] Const. Frequency",4,1,NO_CR_LF);
+                        if(opmode==CONSTANT_CURRENT)
+                            hd44780_write_string("x",3,2,NO_CR_LF);
+                        else
+                            hd44780_write_string("x",4,2,NO_CR_LF);
+                    }
+                    //else if(inscreen==SELECT_RESONATOR)
                 }
             }
 
@@ -746,6 +781,7 @@ int main(void)
             }
             else if(state==OPERATIONAL){
                 unset_disable();
+                imeas_hat=main_avg_abs_current_est*alpha+beta;
 
                 if(opmode==CONSTANT_CURRENT){
                     counter_res_cl=(counter_res_cl+1)%100;
@@ -754,8 +790,6 @@ int main(void)
                         //determine the necessary frequency for the desired current amplitude from the lookup table
                         des_freq_controller=frequency_lookup(i_ref_ampl_ma);
 
-                        //run PI current controller
-                        imeas_hat=main_avg_abs_current_est*alpha+beta;
                         //error signal
                         float err_i_hat=1e-3*((float)i_ref_ampl_ma-imeas_hat);
                         err_i_hat_integral+=err_i_hat;
@@ -772,7 +806,7 @@ int main(void)
                     }
                 }
                 else{
-
+                    set_pwm_freq(des_freq_mhz);
                 }
             }
             else if(state==CALIBRATION){
