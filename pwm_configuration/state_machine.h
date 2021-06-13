@@ -15,7 +15,7 @@
 enum system_state{INIT=0,OPERATIONAL=1,DEBUGSTATE=2,ERROR=3,CALIBRATION=4};
 enum operational_mode{CONSTANT_CURRENT=0,CONSTANT_FREQUENCY=1};
 enum init_screen{START,SELECT_MODE,SELECT_RESONATOR};
-enum resonator{RES2500HZ,RES250HZ};
+enum resonator{RES2500HZ,RES250HZ,RES1150HZ};
 
 extern char input_buffer[];
 const uint32_t res_freq_mhz=10000000;

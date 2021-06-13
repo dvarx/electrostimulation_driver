@@ -2,12 +2,14 @@
 #ifndef FREQUENCY_LOOKUP_H_
 #define FREQUENCY_LOOKUP_H_
 
-#define RESONATOR_2500HZ
+#define RESONATOR_1150HZ
 
 #ifdef RESONATOR_350HZ
     #include "impedance_lookups/350hz_resonator.h"
 #elif defined(RESONATOR_2500HZ)
     #include "impedance_lookups/2500hz_resonator.h"
+#elif defined(RESONATOR_1150HZ)
+    #include "impedance_lookups/1150hz_resonator.h"
 #else
     #error Error : No resonator was defined
 #endif

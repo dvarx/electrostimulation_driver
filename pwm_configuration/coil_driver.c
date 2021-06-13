@@ -56,8 +56,11 @@ float imeas_hat=0.0;                    //measured current amplitude
 const int32_t va_offset=7415;           //measured offset (needs to be calibrated) (nominal 0x1FFF=8192)
 //ireal_ma = alpha*main_avg_abs_current_est+beta
 //these values were linearly fitted
-const float alpha=11.761;
-const float beta=134.28;
+//const float alpha=11.761;
+//const float beta=134.28;
+//---- 1150hz resonator
+const float alpha=7.766;
+const float beta=250.78;
 //control related parameters
 #define V_DC 30.0
 #define CONTROLLER_DT 200E-6
