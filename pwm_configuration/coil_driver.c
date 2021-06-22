@@ -65,7 +65,7 @@ const float beta=250.78;
 #define V_DC 30.0
 #define CONTROLLER_DT 200E-6
 uint32_t i_ref_ampl_ma=1000;                   //reference amplitude value [mA]
-const uint32_t i_ref_amp_max=5000;         //maximum current [mA]
+const uint32_t i_ref_amp_max=7500;         //maximum current [mA]
 const float v_in_hat=V_DC*4.0/M_PI;
 struct pi_controller_32 current_controller={0.0,0.0,0.0,8.0,0.0,CONTROLLER_DT};
 float res_kp=5.0;
@@ -521,14 +521,14 @@ void EUSCIA0_IRQHandler(void)
     }
     else if(status & EUSCI_A_UART_TRANSMIT_INTERRUPT_FLAG){
         //check if end of string to be transmitted reached
-        if(send_buffer[send_pointer]=='\0'){
+        if(send_pointer==0){
             UART_clearInterruptFlag(EUSCI_A0_BASE,0x0002);
             send_pointer=0;
             return;
         }
         else{
             MAP_UART_transmitData(EUSCI_A0_BASE, send_buffer[send_pointer]);
-            send_pointer++;
+            send_pointer--;
         }
     }
 
@@ -537,11 +537,13 @@ void EUSCIA0_IRQHandler(void)
 void uart_write_string(char* string_ptr,uint8_t num){
     //copy string to buffer
     memcpy(send_buffer,string_ptr,num);
-    //append \0 character for safety
-    send_buffer[num]='\0';
+    send_pointer=num;
     //enable transmit interrupt (interrupt will be set when character shifted out or UART buffer empty)
     //after the interrupt is enabled, the interrupt is immediately triggered due to an empty UART send register
     MAP_UART_enableInterrupt(EUSCI_A0_BASE, EUSCI_A_UART_TRANSMIT_INTERRUPT);
+    //send the first character
+    send_pointer--;
+    MAP_UART_transmitData(EUSCI_A0_BASE, send_buffer[0]);
 }
 
 
@@ -812,6 +814,7 @@ int main(void)
                     set_pwm_freq(des_freq_mhz);
                 }
             }
+
             else if(state==CALIBRATION){
                 unset_disable();
                 if(!calibration_initialized){

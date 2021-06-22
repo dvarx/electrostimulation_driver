@@ -9,8 +9,8 @@
 
 const float maxfreq_cfctrl=2000.000000;
 const uint32_t maxfreqmhz_cfctrl=2000000;
-const float minfreq_cfctrl=1200.000000;
-const uint32_t minfreqmhz_cfctrl=1200000;
+const float minfreq_cfctrl=1150.000000;
+const uint32_t minfreqmhz_cfctrl=1150000;
 unsigned int num_entries=100;
 
 //auto generated code for frequencies

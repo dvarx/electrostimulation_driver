@@ -83,7 +83,7 @@ void parse_input(uint8_t buffer_size){
     }
     //!gst command
     else if(!strncmp(input_buffer,GET_STATE,sizeof(GET_STATE)/sizeof(char)-1)){
-        MAP_UART_transmitData(EUSCI_A0_BASE, state);
+        uart_write_string((uint8_t*)&state,sizeof(uint8_t));
     }
     //!gcr command
     else if(!strncmp(input_buffer,GET_CURRENT,sizeof(GET_CURRENT)/sizeof(char)-1)){
