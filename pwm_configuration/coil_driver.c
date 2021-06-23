@@ -521,7 +521,8 @@ void EUSCIA0_IRQHandler(void)
     }
     else if(status & EUSCI_A_UART_TRANSMIT_INTERRUPT_FLAG){
         //check if end of string to be transmitted reached
-        if(send_pointer==0){
+        //if the uint8_t send_pointer is decremented from 0, it wraps around to 255 and we detect the end of the string
+        if(send_pointer==255){
             UART_clearInterruptFlag(EUSCI_A0_BASE,0x0002);
             send_pointer=0;
             return;
@@ -537,13 +538,13 @@ void EUSCIA0_IRQHandler(void)
 void uart_write_string(char* string_ptr,uint8_t num){
     //copy string to buffer
     memcpy(send_buffer,string_ptr,num);
-    send_pointer=num;
+    send_pointer=num-1;
     //enable transmit interrupt (interrupt will be set when character shifted out or UART buffer empty)
     //after the interrupt is enabled, the interrupt is immediately triggered due to an empty UART send register
     MAP_UART_enableInterrupt(EUSCI_A0_BASE, EUSCI_A_UART_TRANSMIT_INTERRUPT);
     //send the first character
+    MAP_UART_transmitData(EUSCI_A0_BASE, send_buffer[send_pointer]);
     send_pointer--;
-    MAP_UART_transmitData(EUSCI_A0_BASE, send_buffer[0]);
 }
 
 
