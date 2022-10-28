@@ -104,7 +104,7 @@ const uint16_t n_shutdown=20+2;                 //number of cycles to wait befor
 uint16_t transition_counter=0;
 bool request_opmode_change=false;                //this bit is set when a change of state from CLOSED_LOOP to RESONANT is requested
 bool command_to_be_processed=false;
-bool request_debug_state=false;
+bool request_debug_state=true;
 bool request_stop=false;
 //lcd related parameters
 char buffer_0[20]="";

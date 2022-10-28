@@ -19,7 +19,7 @@ enum resonator{RES2500HZ,RES250HZ,RES1150HZ};
 
 extern char input_buffer[];
 const uint32_t res_freq_mhz=10000000;
-const uint32_t cl_pwm_freq_mhz=10000000;
+const uint32_t cl_pwm_freq_mhz=1100000;
 extern uint16_t duty;
 extern uint32_t i_ref_ampl_ma;
 extern bool request_opmode_change;
